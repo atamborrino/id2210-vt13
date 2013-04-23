@@ -1,20 +1,16 @@
 package search.system.peer.search;
 
-import search.simulator.snapshot.Snapshot;
-import common.configuration.SearchConfiguration;
-import common.peer.PeerAddress;
-import cyclon.system.peer.cyclon.CyclonSample;
-import cyclon.system.peer.cyclon.CyclonSamplePort;
 import java.io.IOException;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.Random;
+import java.util.Set;
 import java.util.logging.Level;
+
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
-import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.IntField;
 import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexReader;
@@ -23,6 +19,7 @@ import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.queryparser.classic.ParseException;
 import org.apache.lucene.queryparser.classic.QueryParser;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.NumericRangeQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopScoreDocCollector;
@@ -42,10 +39,17 @@ import se.sics.kompics.timer.Timer;
 import se.sics.kompics.web.Web;
 import se.sics.kompics.web.WebRequest;
 import se.sics.kompics.web.WebResponse;
+import search.simulator.snapshot.Snapshot;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
 import tman.system.peer.tman.TManSample;
 import tman.system.peer.tman.TManSamplePort;
+
+import common.configuration.SearchConfiguration;
+import common.peer.PeerAddress;
+
+import cyclon.system.peer.cyclon.CyclonSample;
+import cyclon.system.peer.cyclon.CyclonSamplePort;
 
 /**
  * Should have some comments here.
@@ -63,7 +67,6 @@ public final class Search extends ComponentDefinition {
 
     ArrayList<PeerAddress> neighbours = new ArrayList<PeerAddress>();
     Random randomGenerator = new Random();
-    ArrayList<Integer> indexStore = new ArrayList<Integer>();
     private PeerAddress self;
     private long period;
     private double num;
@@ -73,8 +76,10 @@ public final class Search extends ComponentDefinition {
     Directory index = new RAMDirectory();
     IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
-    private int latestMissingIndexValue =0;
-    
+	// Anti-entropy search
+	int lastIndex = 0;
+	Set<Integer> missingIndices = new HashSet<Integer>();
+
 //-------------------------------------------------------------------	
     public Search() {
 
@@ -83,6 +88,10 @@ public final class Search extends ComponentDefinition {
         subscribe(handleCyclonSample, cyclonSamplePort);
         subscribe(handleTManSample, tmanSamplePort);
         subscribe(handleAddIndexText, indexPort);
+
+		subscribe(handleIndexShuffleRequest, networkPort);
+		subscribe(handleIndexShuffleResp1Handler, networkPort);
+		subscribe(handleIndexShuffleResp2Handler, networkPort);
     }
 //-------------------------------------------------------------------	
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
@@ -178,25 +187,32 @@ public final class Search extends ComponentDefinition {
     }
 
     private void addEntry(String title, String id) throws IOException {
-        IndexWriter w = new IndexWriter(index, config);
-        Document doc = new Document();
-        doc.add(new TextField("title", title, Field.Store.YES));
-        // You may need to make the StringField searchable by NumericRangeQuery. See:
-        // http://stackoverflow.com/questions/13958431/lucene-4-0-indexwriter-updatedocument-for-numeric-term
-        // http://lucene.apache.org/core/4_2_0/core/org/apache/lucene/document/IntField.html
-        doc.add(new StringField("id", id, Field.Store.YES));
-        w.addDocument(doc);
-        w.close();
+		int intId = Integer.valueOf(id);
+		if (intId > lastIndex || missingIndices.contains(intId)) {
+			IndexWriter w = new IndexWriter(index, config);
+			Document doc = new Document();
+			doc.add(new TextField("title", title, Field.Store.YES));
+			// You may need to make the StringField searchable by
+			// NumericRangeQuery. See:
+			// http://stackoverflow.com/questions/13958431/lucene-4-0-indexwriter-updatedocument-for-numeric-term
+			// http://lucene.apache.org/core/4_2_0/core/org/apache/lucene/document/IntField.html
+			doc.add(new IntField("id", intId, Field.Store.YES));
+			w.addDocument(doc);
+			w.close();
 
+			trace("Add entry id:" + intId);
+		}
 
-        int idVal = Integer.parseInt(id);
-        indexStore.add(idVal);
-        Collections.sort(indexStore);
+		// anti-entropy
+		missingIndices.remove(intId);
+		if (lastIndex < intId) {
+			// update missing indices
+			for (int i = lastIndex + 1; i < intId; i++) {
+				missingIndices.add(i);
+			}
+			lastIndex = intId;
+		}
 
-
-        if (idVal == latestMissingIndexValue + 1) {
-            latestMissingIndexValue++;
-        }
     }
 
     private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
@@ -234,12 +250,125 @@ public final class Search extends ComponentDefinition {
         return sb.toString();
     }
     
+	private Set<Document> getWantedIndices(Set<Integer> wantedIndices, int fromIndex) throws IOException {
+		Set<Document> wantedDocs = new HashSet<Document>();
+
+		IndexSearcher searcher = null;
+		IndexReader reader = null;
+		try {
+			reader = DirectoryReader.open(index);
+			searcher = new IndexSearcher(reader);
+		} catch (IOException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			System.exit(-1);
+		}
+
+		// missing indices
+		for (Integer missingIndex : wantedIndices) {
+			Query query = NumericRangeQuery.newIntRange("id", 1, missingIndex, missingIndex, true, true);
+			ScoreDoc[] hits = searcher.search(query, lastIndex + 1).scoreDocs;
+			for (int i = 0; i < hits.length; ++i) {
+				int docId = hits[i].doc;
+				Document d = searcher.doc(docId);
+				wantedDocs.add(d);
+			}
+		}
+
+		// last range
+		Query query = NumericRangeQuery.newIntRange("id", 1, fromIndex, lastIndex, false, true);
+		ScoreDoc[] hits = searcher.search(query, lastIndex + 1).scoreDocs;
+		for (int i = 0; i < hits.length; ++i) {
+			int docId = hits[i].doc;
+			Document d = searcher.doc(docId);
+			wantedDocs.add(d);
+		}
+
+		return wantedDocs;
+	}
+
+	private void updateIndex(Set<Document> docs) throws IOException {
+		for (Document doc : docs) {
+			addEntry(doc.get("title"), doc.get("id"));
+		}
+	}
+
+	Handler<IndexShuffleRequest> handleIndexShuffleRequest = new Handler<IndexShuffleRequest>() {
+		@Override
+		public void handle(IndexShuffleRequest event) {
+			Set<Document> requestedDocs = null;
+			try {
+				requestedDocs = getWantedIndices(event.getMissing(), event.getLastIndex());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			trigger(new IndexShuffleResp1(self, event.getPeerSource(), requestedDocs, missingIndices, lastIndex),
+					networkPort);
+
+		}
+	};
+
+	Handler<IndexShuffleResp1> handleIndexShuffleResp1Handler = new Handler<IndexShuffleResp1>() {
+
+		@Override
+		public void handle(IndexShuffleResp1 event) {
+			Set<Document> requestedDocs = null;
+
+			// update index
+			try {
+				updateIndex(event.getSentEntries());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			// find requested index entries
+			try {
+				requestedDocs = getWantedIndices(event.getWantedEntries(), event.getLastIndex());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+			trigger(new IndexShuffleResp2(self, event.getPeerSource(), requestedDocs), networkPort);
+		}
+	};
+
+	Handler<IndexShuffleResp2> handleIndexShuffleResp2Handler = new Handler<IndexShuffleResp2>() {
+
+		@Override
+		public void handle(IndexShuffleResp2 event) {
+			// update index
+			try {
+				updateIndex(event.getSentEntries());
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
+	};
+
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
             // receive a new list of neighbours
             neighbours = event.getSample();
             // Pick a node or more, and exchange index with them
+			Snapshot.updateCyclonPartners(self, neighbours);
+			if (neighbours.isEmpty()) {
+				trace("received empty cyclon sample");
+			}
+
+			// ANTI-ENTROPY
+			if (!neighbours.isEmpty()) {
+				Random random = new Random();
+				PeerAddress peer = neighbours.get(random.nextInt(neighbours.size()));
+				// trace("Cyclon get node id: " +
+				// peer.getPeerAddress().getId());
+
+				trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
+			}
         }
     };
     
@@ -269,4 +398,9 @@ public final class Search extends ComponentDefinition {
         }
     };
     
+	public void trace(String mess) {
+		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
+		logger.info(toWrite);
+	}
+
 }
