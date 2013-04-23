@@ -20,16 +20,17 @@ public class Scenario1 extends Scenario {
                     raise(5, Operations.peerJoin(5), uniform(13));
                 }
             };
-			// StochasticProcess process3 = new StochasticProcess() {
-			// {
-			// eventInterArrivalTime(constant(100));
-			// raise(100, Operations.addIndexEntry(), uniform(13));
-			// }
-			// };
+
+			StochasticProcess process3 = new StochasticProcess() {
+				{
+					eventInterArrivalTime(constant(100));
+					raise(100, Operations.addIndexEntry(), uniform(13));
+				}
+			};
 
             process1.start();
             process2.startAfterTerminationOf(2000, process1);
-			// process3.startAfterTerminationOf(2000, process2);
+			process3.startAfterTerminationOf(2000, process2);
         }
     };
 

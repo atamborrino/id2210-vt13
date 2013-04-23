@@ -108,7 +108,7 @@ public final class Search extends ComponentDefinition {
             Snapshot.updateNum(self, num);
             try {
                 String title = "The Art of Computer Science";
-                String id = "100";
+				String id = "1";
                 addEntry(title,id);
             } catch (IOException ex) {
                 java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
@@ -200,7 +200,8 @@ public final class Search extends ComponentDefinition {
 			w.addDocument(doc);
 			w.close();
 
-			trace("Add entry id:" + intId);
+			Snapshot.updateEntries(self, intId);
+			// trace("Add entry id:" + intId);
 		}
 
 		// anti-entropy
@@ -364,6 +365,7 @@ public final class Search extends ComponentDefinition {
 			if (!neighbours.isEmpty()) {
 				Random random = new Random();
 				PeerAddress peer = neighbours.get(random.nextInt(neighbours.size()));
+				Snapshot.updateRandSelectedPeer(self, peer);
 				// trace("Cyclon get node id: " +
 				// peer.getPeerAddress().getId());
 
@@ -385,16 +387,17 @@ public final class Search extends ComponentDefinition {
     Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
         @Override
         public void handle(AddIndexText event) {
-            Random r = new Random(System.currentTimeMillis());
-            String id = Integer.toString(r.nextInt(100000));
-            logger.info(self.getPeerAddress().getId() 
-                    + " - adding index entry: {}-{}", event.getText(), id);
-            try {
-                addEntry(event.getText(), id);
-            } catch (IOException ex) {
-                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-                throw new IllegalArgumentException(ex.getMessage());
-            }
+			// Random r = new Random(System.currentTimeMillis());
+			// String id = Integer.toString(r.nextInt(100000));
+			// logger.info(self.getPeerAddress().getId()
+			// + " - adding index entry: {}-{}", event.getText(), id);
+			// try {
+			// addEntry(event.getText(), id);
+			// } catch (IOException ex) {
+			// java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE,
+			// null, ex);
+			// throw new IllegalArgumentException(ex.getMessage());
+			// }
         }
     };
     

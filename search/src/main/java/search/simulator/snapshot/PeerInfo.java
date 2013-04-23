@@ -1,12 +1,16 @@
 package search.simulator.snapshot;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import common.peer.PeerAddress;
 
 public class PeerInfo {
 	private double num;
-	private ArrayList<PeerAddress> cyclonPartners;
+	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
+	private PeerAddress randPeer;
+	private List<Integer> entries = new ArrayList<Integer>();
 
 //-------------------------------------------------------------------
 	public PeerInfo() {
@@ -34,7 +38,24 @@ public class PeerInfo {
 	}
 
 //-------------------------------------------------------------------
-	public ArrayList<PeerAddress> getCyclonPartners() {
+	public List<PeerAddress> getCyclonPartners() {
 		return this.cyclonPartners;
+	}
+	
+	public void updateRandSelectedPeer(PeerAddress peer) {
+		this.randPeer = peer;
+	}
+
+	public PeerAddress getRandSelectedPeer() {
+		return this.randPeer;
+	}
+
+	public void updateEntry(int entry) {
+		this.entries.add(entry);
+		Collections.sort(this.entries);
+	}
+
+	public List<Integer> getEntries() {
+		return this.entries;
 	}
 }

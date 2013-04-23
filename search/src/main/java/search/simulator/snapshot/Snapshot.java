@@ -1,12 +1,13 @@
 package search.simulator.snapshot;
 
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 import common.peer.PeerAddress;
 
 public class Snapshot {
-	private static HashMap<PeerAddress, PeerInfo> peers = new HashMap<PeerAddress, PeerInfo>();
+	private static Map<PeerAddress, PeerInfo> peers = new ConcurrentHashMap<PeerAddress, PeerInfo>();
 	private static int counter = 0;
 	private static String FILENAME = "search.out";
 
@@ -45,16 +46,34 @@ public class Snapshot {
 		peerInfo.updateCyclonPartners(partners);
 	}
 
+	public static void updateRandSelectedPeer(PeerAddress address, PeerAddress partner) {
+		PeerInfo peerInfo = peers.get(address);
+
+		if (peerInfo == null)
+			return;
+
+		peerInfo.updateRandSelectedPeer(partner);
+	}
+
+	public static void updateEntries(PeerAddress address, Integer entry) {
+		PeerInfo peerInfo = peers.get(address);
+
+		if (peerInfo == null)
+			return;
+
+		peerInfo.updateEntry(entry);
+	}
+
 //-------------------------------------------------------------------
 	public static void report() {
-		// String str = new String();
-		// str += "current time: " + counter++ + "\n";
-		// str += reportNetworkState();
-		// str += reportDetails();
-		// str += "###\n";
-		//
-		// System.out.println(str);
-		// FileIO.append(str, FILENAME);
+			String str = new String();
+			str += "current time: " + counter++ + "\n";
+			str += reportNetworkState();
+			str += reportDetails();
+			str += "###\n";
+
+			System.out.println(str);
+			FileIO.append(str, FILENAME);
 	}
 
 //-------------------------------------------------------------------
@@ -68,10 +87,26 @@ public class Snapshot {
 	
 //-------------------------------------------------------------------
 	private static String reportDetails() {
-		PeerInfo peerInfo;
-		String str = new String("---\n");
+		StringBuilder str = new StringBuilder("---\n");
+		for (Map.Entry<PeerAddress, PeerInfo> entry : peers.entrySet()) {
+			PeerAddress peer = entry.getKey();
+			PeerInfo info = entry.getValue();
+			if (info != null) {
+				str.append("Peer " + peer.getPeerAddress().getId() + ": rand neighbour: ");
+				if (info.getRandSelectedPeer() != null) {
+					str.append(info.getRandSelectedPeer().getPeerAddress().getId());
+				} else {
+					str.append("null");
+				}
+				str.append("; entries:");
+				for (Integer indexentry : info.getEntries()) {
+					str.append(" " + indexentry);
+				}
+				str.append("\n");
+			}
+		}
 
-		return str;
+		return str.toString();
 	}
 
 
