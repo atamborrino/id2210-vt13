@@ -188,7 +188,7 @@ public final class Search extends ComponentDefinition {
 
     private void addEntry(String title, String id) throws IOException {
 		int intId = Integer.valueOf(id);
-		if (intId > lastIndex || missingIndices.contains(intId)) {
+		if ((intId > lastIndex) || (missingIndices.contains(intId))) {
 			IndexWriter w = new IndexWriter(index, config);
 			Document doc = new Document();
 			doc.add(new TextField("title", title, Field.Store.YES));
@@ -205,6 +205,7 @@ public final class Search extends ComponentDefinition {
 		}
 
 		// anti-entropy
+		trace("addEntry id: " + intId);
 		missingIndices.remove(intId);
 		if (lastIndex < intId) {
 			// update missing indices
@@ -264,24 +265,36 @@ public final class Search extends ComponentDefinition {
 			System.exit(-1);
 		}
 
-		// missing indices
-		for (Integer missingIndex : wantedIndices) {
-			Query query = NumericRangeQuery.newIntRange("id", 1, missingIndex, missingIndex, true, true);
-			ScoreDoc[] hits = searcher.search(query, lastIndex + 1).scoreDocs;
-			for (int i = 0; i < hits.length; ++i) {
-				int docId = hits[i].doc;
-				Document d = searcher.doc(docId);
-				wantedDocs.add(d);
+		// last range
+		// Query query = NumericRangeQuery.newIntRange("id", 1, fromIndex,
+		// lastIndex, false, true);
+		// ScoreDoc[] hits = searcher.search(query, lastIndex + 1).scoreDocs;
+		// trace("hits.length: " + hits.length);
+		// for (int i = 0; i < hits.length; ++i) {
+		// int docId = hits[i].doc;
+		// Document d = searcher.doc(docId);
+		// wantedDocs.add(d);
+		// }
+		for (int j = fromIndex + 1; j <= lastIndex; j++) {
+			Query query1 = NumericRangeQuery.newIntRange("id", 1, j, j, true,
+					true);
+			ScoreDoc[] hits1 = searcher.search(query1, lastIndex + 1).scoreDocs;
+			for (int i = 0; i < hits1.length; ++i) {
+				int docId1 = hits1[i].doc;
+				Document d1 = searcher.doc(docId1);
+				wantedDocs.add(d1);
 			}
 		}
 
-		// last range
-		Query query = NumericRangeQuery.newIntRange("id", 1, fromIndex, lastIndex, false, true);
-		ScoreDoc[] hits = searcher.search(query, lastIndex + 1).scoreDocs;
-		for (int i = 0; i < hits.length; ++i) {
-			int docId = hits[i].doc;
-			Document d = searcher.doc(docId);
-			wantedDocs.add(d);
+		// missing indices
+		for (Integer missingIndex : wantedIndices) {
+			Query query1 = NumericRangeQuery.newIntRange("id", 1, missingIndex, missingIndex, true, true);
+			ScoreDoc[] hits1 = searcher.search(query1, lastIndex + 1).scoreDocs;
+			for (int i = 0; i < hits1.length; ++i) {
+				int docId1 = hits1[i].doc;
+				Document d1 = searcher.doc(docId1);
+				wantedDocs.add(d1);
+			}
 		}
 
 		return wantedDocs;
@@ -366,9 +379,6 @@ public final class Search extends ComponentDefinition {
 				Random random = new Random();
 				PeerAddress peer = neighbours.get(random.nextInt(neighbours.size()));
 				Snapshot.updateRandSelectedPeer(self, peer);
-				// trace("Cyclon get node id: " +
-				// peer.getPeerAddress().getId());
-
 				trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
 			}
         }
