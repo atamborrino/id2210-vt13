@@ -101,10 +101,12 @@ public final class TMan extends ComponentDefinition {
 				List<PeerAddress> view = new ArrayList<PeerAddress>();
 				view.add(self);
 				for (PeerAddress p : tmanPartners) {
-					view.add(p);
+					if (!p.equals(partner)) {
+						view.add(p);
+					}
 				}
-				Collections.sort(view, new UtilityComparator(partner));
-				Collections.reverse(view);
+				// Collections.sort(view, new UtilityComparator(partner));
+				// Collections.reverse(view);
 				trigger(new TManPartnersRequest(self, partner, view), networkPort);
 
 				// Publish sample to connected components
@@ -135,9 +137,7 @@ public final class TMan extends ComponentDefinition {
 
 						Collections.sort(tmanPartners, uComparator);
 						Collections.reverse(tmanPartners);
-
 					}
-
 				}
 
 			} else {
@@ -180,11 +180,13 @@ public final class TMan extends ComponentDefinition {
 			List<PeerAddress> view = new ArrayList<PeerAddress>();
 			view.add(self);
 			for (PeerAddress p : tmanPartners) {
-				view.add(p);
+				if (!p.equals(event.getPeerSource())) {
+					view.add(p);
+				}
 			}
-			view.remove(event.getPeerSource());
-			Collections.sort(view, new UtilityComparator(event.getPeerSource()));
-			Collections.reverse(view);
+			// Collections.sort(view, new
+			// UtilityComparator(event.getPeerSource()));
+			// Collections.reverse(view);
 
 			trigger(new TManPartnersResponse(self, event.getPeerSource(), view), networkPort);
 		}
