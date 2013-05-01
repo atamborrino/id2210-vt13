@@ -1,17 +1,18 @@
 package tman.system.peer.tman;
 
 import java.util.ArrayList;
-
-import common.peer.PeerAddress;
+import java.util.List;
 
 import se.sics.kompics.Event;
 
+import common.peer.PeerAddress;
+
 
 public class TManSample extends Event {
-	ArrayList<PeerAddress> partners = new ArrayList<PeerAddress>();
+	List<PeerAddress> partners = new ArrayList<PeerAddress>();
 
 //-------------------------------------------------------------------
-	public TManSample(ArrayList<PeerAddress> partners) {
+	public TManSample(List<PeerAddress> partners) {
 		this.partners = partners;
 	}
         
@@ -19,7 +20,7 @@ public class TManSample extends Event {
 	}
 
 //-------------------------------------------------------------------
-	public ArrayList<PeerAddress> getSample() {
+	public List<PeerAddress> getSample() {
 		return this.partners;
 	}
 }

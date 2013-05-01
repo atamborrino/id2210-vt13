@@ -1,12 +1,14 @@
 package tman.simulator.snapshot;
 
-import common.peer.PeerAddress;
 import java.util.ArrayList;
+import java.util.List;
+
+import common.peer.PeerAddress;
 
 
 public class PeerInfo {
-	private ArrayList<PeerAddress> tmanPartners;
-	private ArrayList<PeerAddress> cyclonPartners;
+	private List<PeerAddress> tmanPartners;
+	private List<PeerAddress> cyclonPartners;
 
 //-------------------------------------------------------------------
 	public PeerInfo() {
@@ -15,22 +17,22 @@ public class PeerInfo {
 	}
 
 //-------------------------------------------------------------------
-	public void updateTManPartners(ArrayList<PeerAddress> partners) {
+	public void updateTManPartners(List<PeerAddress> partners) {
 		this.tmanPartners = partners;
 	}
 
 //-------------------------------------------------------------------
-	public void updateCyclonPartners(ArrayList<PeerAddress> partners) {
+	public void updateCyclonPartners(List<PeerAddress> partners) {
 		this.cyclonPartners = partners;
 	}
 
 //-------------------------------------------------------------------
-	public ArrayList<PeerAddress> getTManPartners() {
+	public List<PeerAddress> getTManPartners() {
 		return this.tmanPartners;
 	}
 
 //-------------------------------------------------------------------
-	public ArrayList<PeerAddress> getCyclonPartners() {
+	public List<PeerAddress> getCyclonPartners() {
 		return this.cyclonPartners;
 	}
 }

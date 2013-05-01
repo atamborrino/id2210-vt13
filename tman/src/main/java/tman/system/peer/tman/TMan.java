@@ -1,6 +1,10 @@
 package tman.system.peer.tman;
 
 import java.util.ArrayList;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
@@ -21,13 +25,15 @@ import cyclon.system.peer.cyclon.CyclonSamplePort;
 
 public final class TMan extends ComponentDefinition {
 
+	private static final Logger logger = LoggerFactory.getLogger(TMan.class);
     Negative<TManSamplePort> tmanPartnersPort = negative(TManSamplePort.class);
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<Network> networkPort = positive(Network.class);
     Positive<Timer> timerPort = positive(Timer.class);
     private long period;
     private PeerAddress self;
-    private ArrayList<PeerAddress> tmanPartners;
+	private List<PeerAddress> tmanPartners;
+	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
     private TManConfiguration tmanConfiguration;
 
     public class TManSchedule extends Timeout {
@@ -82,7 +88,7 @@ public final class TMan extends ComponentDefinition {
     Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
         @Override
         public void handle(CyclonSample event) {
-            ArrayList<PeerAddress> cyclonPartners = event.getSample();
+			cyclonPartners = event.getSample();
             // merge cyclonPartners into TManPartners
         }
     };
@@ -100,5 +106,10 @@ public final class TMan extends ComponentDefinition {
 
         }
     };
+
+	public void trace(String mess) {
+		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
+		logger.info(toWrite);
+	}
 
 }

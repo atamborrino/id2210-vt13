@@ -3,6 +3,7 @@ package search.system.peer.search;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Random;
 import java.util.Set;
 import java.util.logging.Level;
@@ -388,7 +389,7 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(TManSample event) {
             // receive a new list of neighbours
-            ArrayList<PeerAddress> sampleNodes = event.getSample();
+			List<PeerAddress> sampleNodes = event.getSample();
             // Pick a node or more, and exchange index with them
         }
     };

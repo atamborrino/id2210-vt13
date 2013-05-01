@@ -1,8 +1,10 @@
 package tman.simulator.snapshot;
 
-import common.peer.PeerAddress;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.TreeMap;
+
+import common.peer.PeerAddress;
 
 
 public class Snapshot {
@@ -26,7 +28,7 @@ public class Snapshot {
 	}
 
 //-------------------------------------------------------------------
-	public static void updateTManPartners(PeerAddress address, ArrayList<PeerAddress> partners) {
+	public static void updateTManPartners(PeerAddress address, List<PeerAddress> partners) {
 		PeerInfo peerInfo = peers.get(address);
 		
 		if (peerInfo == null)
