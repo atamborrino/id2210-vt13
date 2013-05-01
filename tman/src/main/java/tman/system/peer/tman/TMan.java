@@ -120,6 +120,7 @@ public final class TMan extends ComponentDefinition {
 			if (!cyclonPartners.isEmpty()) {
 
 				for (PeerAddress partner : cyclonPartners) {
+					// trace("partner: " + partner.getPeerAddress().getId());
 					if (!tmanPartners.contains(partner)) {
 						if (tmanPartners.size() < tmanPartnersSize) {
 							tmanPartners.add(partner);
@@ -134,6 +135,7 @@ public final class TMan extends ComponentDefinition {
 
 						Collections.sort(tmanPartners, uComparator);
 						Collections.reverse(tmanPartners);
+
 					}
 
 				}
@@ -142,8 +144,8 @@ public final class TMan extends ComponentDefinition {
 				trace("empty cyclon sample");
 			}
 
-			trace("tman partners: ");
 			StringBuilder sb = new StringBuilder();
+			sb.append("tman partners: ");
 			for (PeerAddress p : tmanPartners) {
 				sb.append(p.getPeerAddress().getId());
 				sb.append(" ");
@@ -161,6 +163,15 @@ public final class TMan extends ComponentDefinition {
 			List<PeerAddress> viewSender = event.getView();
 			mergeTmanPartners(viewSender);
 			Collections.sort(tmanPartners, uComparator);
+
+			StringBuilder sb = new StringBuilder();
+			sb.append("handleTManPrequest: after sort: ");
+			for (PeerAddress pp : tmanPartners) {
+				sb.append(pp.getPeerAddress().getId());
+				sb.append(" ");
+			}
+			// trace(sb.toString());
+
 			while (tmanPartners.size() > tmanPartnersSize) {
 				tmanPartners.remove(0);
 			}
@@ -171,6 +182,7 @@ public final class TMan extends ComponentDefinition {
 			for (PeerAddress p : tmanPartners) {
 				view.add(p);
 			}
+			view.remove(event.getPeerSource());
 			Collections.sort(view, new UtilityComparator(event.getPeerSource()));
 			Collections.reverse(view);
 
