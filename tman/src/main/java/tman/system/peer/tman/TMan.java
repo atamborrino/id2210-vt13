@@ -1,6 +1,7 @@
 package tman.system.peer.tman;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Random;
 
@@ -38,6 +39,7 @@ public final class TMan extends ComponentDefinition {
 	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
 	private TManConfiguration tmanConfiguration;
 	private final int tmanPartnersSize = 5;
+	private UtilityComparator uComparator;
 
 	public class TManSchedule extends Timeout {
 
@@ -68,7 +70,7 @@ public final class TMan extends ComponentDefinition {
 		public void handle(TManInit init) {
 
 			self = init.getSelf();
-			utility = peerUtility(self);
+			uComparator = new UtilityComparator(self);
 			tmanConfiguration = init.getConfiguration();
 			period = tmanConfiguration.getPeriod();
 
@@ -104,9 +106,13 @@ public final class TMan extends ComponentDefinition {
 					} else {
 						int last = tmanPartners.size() - 1;
 						PeerAddress lessPreferred = tmanPartners.get(last);
-						tmanPartners.remove(last);
-						tmanPartners.add(last, prefer(partner, lessPreferred));
+						if (uComparator.compare(partner, lessPreferred) > 0) {
+							tmanPartners.remove(last);
+							tmanPartners.add(partner);
+						}
 					}
+
+					Collections.sort(tmanPartners, uComparator);
 				}
 
 			} else {
@@ -138,24 +144,6 @@ public final class TMan extends ComponentDefinition {
 
 		}
 	};
-
-	public PeerAddress prefer(PeerAddress p1, PeerAddress p2) {
-		int u1 = peerUtility(p1);
-		int u2 = peerUtility(p2);
-		if ((u1 > utility && u2 < utility) || (Math.abs(u1 - utility) < Math.abs(u2 - utility))) {
-			return p1;
-		} else {
-			return p2;
-		}
-	}
-
-	public int peerUtility(PeerAddress peer) {
-		return (-1) * peer.getPeerAddress().getId();
-	}
-
-	public int getUtility() {
-		return utility;
-	}
 
 	public void trace(String mess) {
 		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
