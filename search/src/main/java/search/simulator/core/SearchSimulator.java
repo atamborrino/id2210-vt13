@@ -1,13 +1,16 @@
 package search.simulator.core;
 
-import common.simulation.SimulatorPort;
 import java.math.BigInteger;
+import java.net.InetAddress;
 import java.util.HashMap;
+import java.util.Random;
 
+import se.sics.ipasdistances.AsIpGenerator;
 import se.sics.kompics.ChannelFilter;
 import se.sics.kompics.Component;
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
+import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.Start;
 import se.sics.kompics.Stop;
@@ -17,27 +20,25 @@ import se.sics.kompics.network.Network;
 import se.sics.kompics.p2p.bootstrap.BootstrapConfiguration;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.Timer;
-
+import se.sics.kompics.web.Web;
+import search.simulator.snapshot.Snapshot;
+import search.system.peer.AddIndexText;
+import search.system.peer.IndexPort;
 import search.system.peer.SearchPeer;
 import search.system.peer.SearchPeerInit;
-import common.peer.PeerAddress;
-import search.simulator.snapshot.Snapshot;
-import common.configuration.SearchConfiguration;
+
 import common.configuration.Configuration;
 import common.configuration.CyclonConfiguration;
+import common.configuration.SearchConfiguration;
+import common.configuration.TManConfiguration;
+import common.peer.PeerAddress;
 import common.simulation.AddIndexEntry;
 import common.simulation.ConsistentHashtable;
 import common.simulation.GenerateReport;
 import common.simulation.PeerFail;
 import common.simulation.PeerJoin;
 import common.simulation.SimulatorInit;
-import java.net.InetAddress;
-import java.util.Random;
-import se.sics.ipasdistances.AsIpGenerator;
-import se.sics.kompics.Negative;
-import se.sics.kompics.web.Web;
-import search.system.peer.AddIndexText;
-import search.system.peer.IndexPort;
+import common.simulation.SimulatorPort;
 
 public final class SearchSimulator extends ComponentDefinition {
 
@@ -50,6 +51,7 @@ public final class SearchSimulator extends ComponentDefinition {
     private BootstrapConfiguration bootstrapConfiguration;
     private CyclonConfiguration cyclonConfiguration;
     private SearchConfiguration searchConfiguration;
+	private TManConfiguration tmanConfiguration;
     private int peerIdSequence;
     private BigInteger identifierSpaceSize;
     private ConsistentHashtable<BigInteger> ringNodes;
@@ -82,7 +84,9 @@ public final class SearchSimulator extends ComponentDefinition {
 
             bootstrapConfiguration = init.getBootstrapConfiguration();
             cyclonConfiguration = init.getCyclonConfiguration();
+			tmanConfiguration = init.getTmanConfiguration();
             searchConfiguration = init.getAggregationConfiguration();
+
 
             identifierSpaceSize = cyclonConfiguration.getIdentifierSpaceSize();
 
@@ -169,7 +173,9 @@ public final class SearchSimulator extends ComponentDefinition {
         connect(timer, peer.getNegative(Timer.class));
         connect(peer.getPositive(Web.class), webIncoming); //, new WebDestinationFilter(peerId));
 
-        trigger(new SearchPeerInit(peerAddress, num, bootstrapConfiguration, cyclonConfiguration, searchConfiguration), peer.getControl());
+		trigger(new SearchPeerInit(peerAddress, num, bootstrapConfiguration,
+				cyclonConfiguration, tmanConfiguration, searchConfiguration),
+				peer.getControl());
 
         trigger(new Start(), peer.getControl());
         peers.put(id, peer);

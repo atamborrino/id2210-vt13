@@ -18,17 +18,25 @@ import se.sics.kompics.p2p.bootstrap.PeerEntry;
 import se.sics.kompics.p2p.bootstrap.client.BootstrapClient;
 import se.sics.kompics.p2p.bootstrap.client.BootstrapClientInit;
 import se.sics.kompics.timer.Timer;
-
+import se.sics.kompics.web.Web;
 import search.simulator.snapshot.Snapshot;
-import common.peer.PeerAddress;
 import search.system.peer.search.Search;
 import search.system.peer.search.SearchInit;
-import common.configuration.SearchConfiguration;
-import common.configuration.CyclonConfiguration;
-import cyclon.system.peer.cyclon.*;
-import se.sics.kompics.web.Web;
 import tman.system.peer.tman.TMan;
+import tman.system.peer.tman.TManInit;
 import tman.system.peer.tman.TManSamplePort;
+
+import common.configuration.CyclonConfiguration;
+import common.configuration.SearchConfiguration;
+import common.configuration.TManConfiguration;
+import common.peer.PeerAddress;
+
+import cyclon.system.peer.cyclon.Cyclon;
+import cyclon.system.peer.cyclon.CyclonInit;
+import cyclon.system.peer.cyclon.CyclonJoin;
+import cyclon.system.peer.cyclon.CyclonPort;
+import cyclon.system.peer.cyclon.CyclonSamplePort;
+import cyclon.system.peer.cyclon.JoinCompleted;
 
 
 public final class SearchPeer extends ComponentDefinition {
@@ -85,11 +93,14 @@ public final class SearchPeer extends ComponentDefinition {
 			peerSelf = init.getPeerSelf();
 			self = peerSelf.getPeerAddress();
 			CyclonConfiguration cyclonConfiguration = init.getCyclonConfiguration();
+			TManConfiguration tmanConfiguration = init.getTmanConfiguration();
 			aggregationConfiguration = init.getApplicationConfiguration();
 			
 			bootstrapRequestPeerCount = cyclonConfiguration.getBootstrapRequestPeerCount();
 
 			trigger(new CyclonInit(cyclonConfiguration), cyclon.getControl());
+			trigger(new TManInit(peerSelf, tmanConfiguration),
+					tman.getControl());
 			trigger(new BootstrapClientInit(self, init.getBootstrapConfiguration()), bootstrap.getControl());
 			BootstrapRequest request = new BootstrapRequest("Cyclon", bootstrapRequestPeerCount);
 			trigger(request, bootstrap.getPositive(P2pBootstrap.class));

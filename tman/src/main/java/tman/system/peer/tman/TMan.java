@@ -1,11 +1,6 @@
 package tman.system.peer.tman;
 
-import common.configuration.TManConfiguration;
-import common.peer.PeerAddress;
 import java.util.ArrayList;
-
-import cyclon.system.peer.cyclon.CyclonSample;
-import cyclon.system.peer.cyclon.CyclonSamplePort;
 
 import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
@@ -16,8 +11,13 @@ import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timeout;
 import se.sics.kompics.timer.Timer;
-
 import tman.simulator.snapshot.Snapshot;
+
+import common.configuration.TManConfiguration;
+import common.peer.PeerAddress;
+
+import cyclon.system.peer.cyclon.CyclonSample;
+import cyclon.system.peer.cyclon.CyclonSamplePort;
 
 public final class TMan extends ComponentDefinition {
 
@@ -56,6 +56,8 @@ public final class TMan extends ComponentDefinition {
     Handler<TManInit> handleInit = new Handler<TManInit>() {
         @Override
         public void handle(TManInit init) {
+
+			System.out.println("TMAN INITIALIZED");
             self = init.getSelf();
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
