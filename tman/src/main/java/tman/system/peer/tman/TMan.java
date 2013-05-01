@@ -2,6 +2,7 @@ package tman.system.peer.tman;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -94,12 +95,8 @@ public final class TMan extends ComponentDefinition {
 			cyclonPartners = event.getSample();
 			if (!cyclonPartners.isEmpty()) {
 
-				PeerAddress partner = cyclonPartners.get(0);
-				int counter = 1;
-				while (tmanPartners.contains(partner) && counter < cyclonPartners.size()) {
-					partner = cyclonPartners.get(counter);
-					counter++;
-				}
+				Random random = new Random();
+				PeerAddress partner = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
 
 				if (!tmanPartners.contains(partner)) {
 					if (tmanPartners.size() < tmanPartnersSize) {
