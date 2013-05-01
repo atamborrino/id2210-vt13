@@ -45,6 +45,7 @@ import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
 import tman.system.peer.tman.TManSample;
 import tman.system.peer.tman.TManSamplePort;
+import tman.system.peer.tman.UtilityComparator;
 
 import common.configuration.SearchConfiguration;
 import common.peer.PeerAddress;
@@ -66,7 +67,7 @@ public final class Search extends ComponentDefinition {
     Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
     Positive<TManSamplePort> tmanSamplePort = positive(TManSamplePort.class);
 
-    ArrayList<PeerAddress> neighbours = new ArrayList<PeerAddress>();
+    ArrayList<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
     Random randomGenerator = new Random();
     private PeerAddress self;
     private long period;
@@ -79,7 +80,9 @@ public final class Search extends ComponentDefinition {
 
 	// Anti-entropy search
 	int lastIndex = 0;
-	Set<Integer> missingIndices = new HashSet<Integer>();
+	private Set<Integer> missingIndices = new HashSet<Integer>();
+
+	private UtilityComparator uComparator;
 
 //-------------------------------------------------------------------	
     public Search() {
@@ -101,6 +104,8 @@ public final class Search extends ComponentDefinition {
             num = init.getNum();
             searchConfiguration = init.getConfiguration();
             period = searchConfiguration.getPeriod();
+
+	    uComparator = new UtilityComparator(self);
 
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
@@ -368,32 +373,127 @@ public final class Search extends ComponentDefinition {
         @Override
         public void handle(CyclonSample event) {
             // receive a new list of neighbours
-            neighbours = event.getSample();
+	    cyclonPartners = event.getSample();
             // Pick a node or more, and exchange index with them
-			Snapshot.updateCyclonPartners(self, neighbours);
-			if (neighbours.isEmpty()) {
+			Snapshot.updateCyclonPartners(self, cyclonPartners);
+			if (cyclonPartners.isEmpty()) {
 				trace("received empty cyclon sample");
 			}
 
 			// ANTI-ENTROPY
-			if (!neighbours.isEmpty()) {
+			if (!cyclonPartners.isEmpty()) {
 				Random random = new Random();
-				PeerAddress peer = neighbours.get(random.nextInt(neighbours.size()));
+				PeerAddress peer = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
 				Snapshot.updateRandSelectedPeer(self, peer);
 				trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
 			}
         }
     };
     
+	// TMan
+	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
+	private final int CONVERGENCE_TRHESHOLD = 10;
+	private int currentConvergence = 0;
+	private boolean gradientHasConverged = false;
+	private boolean isLeader = false;
+	private boolean onGoingElection = false;
+	private int leaderElectionAcks = 0;
+	private int electionId = 0;
+	private PeerAddress leader = null;
+	private List<PeerAddress> electionGroup;
+
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
-        @Override
+		@Override
         public void handle(TManSample event) {
             // receive a new list of neighbours
-			List<PeerAddress> sampleNodes = event.getSample();
-            // Pick a node or more, and exchange index with them
+			List<PeerAddress> tmanSamples = event.getSample();
+			if (tmanSamples.equals(tmanPartners)) {
+				currentConvergence++;
+				if (currentConvergence >= CONVERGENCE_TRHESHOLD) {
+					trace("Gradient convergence");
+					gradientHasConverged = true;
+					if (!onGoingElection && leader == null) {
+						// try to see if I am the leader
+						boolean possibleLeader = true;
+						for (PeerAddress peer: tmanPartners) {
+							if (uComparator.peerUtility(self) < uComparator.peerUtility(peer)) {
+								possibleLeader = false;
+							}
+						}
+						if (possibleLeader) {
+							// launch new election
+							trace("Launching new election");
+							onGoingElection = true;
+							leaderElectionAcks = 0;
+							for (PeerAddress peer : tmanPartners) {
+								// start quorum based leader election
+								trigger(new LeaderElectionRequest(self, peer, electionId), networkPort);
+							}
+						}
+					}
+				}
+			} else {
+				gradientHasConverged = false;
+				currentConvergence = 0;
+			}
+
+			tmanPartners = tmanSamples;
         }
     };
     
+    Handler<LeaderElectionRequest> handleLeaderElectionRequest = new Handler<LeaderElectionRequest>() {
+	@Override
+		public void handle(LeaderElectionRequest event) {
+			PeerAddress asker = event.getPeerSource();
+			boolean askerIsLeader = true;
+			if (isLeader || leader != null || uComparator.peerUtility(self) > uComparator.peerUtility(asker)) {
+				askerIsLeader = false;
+			} else {
+				for (PeerAddress peer : tmanPartners) {
+					if (uComparator.peerUtility(peer) > uComparator.peerUtility(asker)) {
+						askerIsLeader = false;
+					}
+				}
+			}
+			trigger(new LeaderElectionResponse(self, asker, askerIsLeader, event.getElectionId()), networkPort);
+	}
+	};
+
+	Handler<LeaderElectionResponse> handleLeaderElectionResponse = new Handler<LeaderElectionResponse>() {
+		@Override
+		public void handle(LeaderElectionResponse event) {
+			if (event.getElectionId() == electionId) {
+				if (event.isLeader()) {
+					leaderElectionAcks++;
+					if (leaderElectionAcks > (tmanPartners.size() / 2 + 1)) {
+						// self is elected as leader
+						trace("Election succeed. I am the leader");
+						isLeader = true;
+						leader = self;
+						electionGroup = new ArrayList<PeerAddress>(tmanPartners); // copy
+						for (PeerAddress peer : tmanPartners) {
+							trigger(new LeaderElectionResult(self, peer, tmanPartners), networkPort);
+						}
+						onGoingElection = false;
+					}
+				} else {
+					trace("Election failed");
+					electionId++;
+					leaderElectionAcks = 0;
+					onGoingElection = false;
+				}
+			}
+		}
+	};
+
+	Handler<LeaderElectionResult> handleLeaderElectionResult = new Handler<LeaderElectionResult>() {
+		@Override
+		public void handle(LeaderElectionResult event) {
+			leader = event.getPeerSource();
+			electionGroup = event.getElectionGroup();
+		}
+	};
+
 //-------------------------------------------------------------------	
     Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
         @Override
