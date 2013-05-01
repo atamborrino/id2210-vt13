@@ -86,8 +86,29 @@ public final class TMan extends ComponentDefinition {
 		public void handle(TManSchedule event) {
 			Snapshot.updateTManPartners(self, tmanPartners);
 
-			// Publish sample to connected components
-			trigger(new TManSample(tmanPartners), tmanPartnersPort);
+			if (!tmanPartners.isEmpty()) {
+				// With high probability, shuffle with preferred neighbor
+				PeerAddress partner;
+				Random rand = new Random();
+				float proba = rand.nextFloat();
+				if (proba < 0.8) {
+					partner = tmanPartners.get(0);
+				} else {
+					partner = tmanPartners.get(rand.nextInt(tmanPartners.size() - 1));
+				}
+
+				List<PeerAddress> view = new ArrayList<PeerAddress>();
+				view.add(self);
+				for (PeerAddress p : tmanPartners) {
+					view.add(p);
+				}
+				Collections.sort(view, new UtilityComparator(partner));
+				Collections.reverse(view);
+				trigger(new TManPartnersRequest(self, partner, view), networkPort);
+
+				// Publish sample to connected components
+				trigger(new TManSample(tmanPartners), tmanPartnersPort);
+			}
 		}
 	};
 	// -------------------------------------------------------------------
@@ -97,30 +118,29 @@ public final class TMan extends ComponentDefinition {
 			cyclonPartners = event.getSample();
 			if (!cyclonPartners.isEmpty()) {
 
-				Random random = new Random();
-				PeerAddress partner = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
-				trace("partner: " + partner.getPeerAddress().getId());
-
-				if (!tmanPartners.contains(partner)) {
-					if (tmanPartners.size() < tmanPartnersSize) {
-						tmanPartners.add(partner);
-					} else {
-						int last = tmanPartners.size() - 1;
-						PeerAddress lessPreferred = tmanPartners.get(last);
-						if (uComparator.compare(partner, lessPreferred) > 0) {
-							tmanPartners.remove(last);
+				for (PeerAddress partner : cyclonPartners) {
+					trace("partner: " + partner.getPeerAddress().getId());
+					if (!tmanPartners.contains(partner)) {
+						if (tmanPartners.size() < tmanPartnersSize) {
 							tmanPartners.add(partner);
+						} else {
+							int last = tmanPartners.size() - 1;
+							PeerAddress lessPreferred = tmanPartners.get(last);
+							if (uComparator.compare(partner, lessPreferred) > 0) {
+								tmanPartners.remove(last);
+								tmanPartners.add(partner);
+							}
 						}
+
+						Collections.sort(tmanPartners, uComparator);
+						Collections.reverse(tmanPartners);
 					}
 
-					Collections.sort(tmanPartners, uComparator);
-					Collections.reverse(tmanPartners);
 				}
 
 			} else {
 				trace("empty cyclon sample");
 			}
-
 
 			trace("tman partners: ");
 			StringBuilder sb = new StringBuilder();
@@ -133,19 +153,69 @@ public final class TMan extends ComponentDefinition {
 		}
 	};
 	// -------------------------------------------------------------------
-	Handler<ExchangeMsg.Request> handleTManPartnersRequest = new Handler<ExchangeMsg.Request>() {
-		@Override
-		public void handle(ExchangeMsg.Request event) {
 
+	Handler<TManPartnersRequest> handleTManPartnersRequest = new Handler<TManPartnersRequest>() {
+
+		@Override
+		public void handle(TManPartnersRequest event) {
+			List<PeerAddress> viewSender = event.getView();
+			mergeTmanPartners(viewSender);
+			Collections.sort(tmanPartners, uComparator);
+			while (tmanPartners.size() > tmanPartnersSize) {
+				tmanPartners.remove(0);
+			}
+			Collections.reverse(tmanPartners);
+
+			List<PeerAddress> view = new ArrayList<PeerAddress>();
+			view.add(self);
+			for (PeerAddress p : tmanPartners) {
+				view.add(p);
+			}
+			Collections.sort(view, new UtilityComparator(event.getPeerSource()));
+			Collections.reverse(view);
+
+			trigger(new TManPartnersResponse(self, event.getPeerSource(), view), networkPort);
+		}
+
+	};
+	// Handler<ExchangeMsg.Request> handleTManPartnersRequest = new
+	// Handler<ExchangeMsg.Request>() {
+	// @Override
+	// public void handle(ExchangeMsg.Request event) {
+	//
+	// }
+	// };
+
+	Handler<TManPartnersResponse> handleTManPartnersResponse = new Handler<TManPartnersResponse>() {
+
+		@Override
+		public void handle(TManPartnersResponse event) {
+			List<PeerAddress> viewSender = event.getView();
+			mergeTmanPartners(viewSender);
+			Collections.sort(tmanPartners, uComparator);
+			while (tmanPartners.size() > tmanPartnersSize) {
+				tmanPartners.remove(0);
+			}
+			Collections.reverse(tmanPartners);
 		}
 	};
 
-	Handler<ExchangeMsg.Response> handleTManPartnersResponse = new Handler<ExchangeMsg.Response>() {
-		@Override
-		public void handle(ExchangeMsg.Response event) {
+	// Handler<ExchangeMsg.Response> handleTManPartnersResponse = new
+	// Handler<ExchangeMsg.Response>() {
+	// @Override
+	// public void handle(ExchangeMsg.Response event) {
+	//
+	// }
+	// };
 
+	private void mergeTmanPartners(List<PeerAddress> view) {
+		for (PeerAddress peer : view) {
+			if (!tmanPartners.contains(peer) && !peer.equals(self)) {
+				tmanPartners.add(peer);
+			}
 		}
-	};
+
+	}
 
 	public void trace(String mess) {
 		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
