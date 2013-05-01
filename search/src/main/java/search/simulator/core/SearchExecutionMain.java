@@ -72,7 +72,8 @@ public final class SearchExecutionMain extends ComponentDefinition {
 
 
 
-        InetAddress ip = InetAddress.getLocalHost();
+		// InetAddress ip = InetAddress.getLocalHost();
+		InetAddress ip = InetAddress.getByName("127.0.0.1");
         int webPort = 9999;
         String webServerAddr = "http://" + ip.getHostAddress() + ":" + webPort;
         final JettyWebServerConfiguration webConfiguration =

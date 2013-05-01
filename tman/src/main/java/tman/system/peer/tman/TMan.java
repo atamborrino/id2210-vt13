@@ -83,7 +83,6 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(CyclonSample event) {
             ArrayList<PeerAddress> cyclonPartners = event.getSample();
-
             // merge cyclonPartners into TManPartners
         }
     };
