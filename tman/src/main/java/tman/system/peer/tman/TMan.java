@@ -2,6 +2,7 @@ package tman.system.peer.tman;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Random;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,9 +33,11 @@ public final class TMan extends ComponentDefinition {
     Positive<Timer> timerPort = positive(Timer.class);
     private long period;
     private PeerAddress self;
+	private int utility;
 	private List<PeerAddress> tmanPartners;
 	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
     private TManConfiguration tmanConfiguration;
+	private final int tmanPartnersSize = 5;
 
     public class TManSchedule extends Timeout {
 
@@ -63,8 +66,8 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(TManInit init) {
 
-			System.out.println("TMAN INITIALIZED");
             self = init.getSelf();
+			utility = peerUtility(self);
             tmanConfiguration = init.getConfiguration();
             period = tmanConfiguration.getPeriod();
 
@@ -89,7 +92,34 @@ public final class TMan extends ComponentDefinition {
         @Override
         public void handle(CyclonSample event) {
 			cyclonPartners = event.getSample();
-            // merge cyclonPartners into TManPartners
+			if (!cyclonPartners.isEmpty()) {
+
+				PeerAddress partner = cyclonPartners.get(0);
+				Random random = new Random();
+				while (tmanPartners.contains(partner)) {
+					partner = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
+				}
+
+				if ((tmanPartners.size() < tmanPartnersSize) && (!tmanPartners.contains(partner))) {
+					tmanPartners.add(partner);
+				} else {
+					int last = tmanPartners.size() - 1;
+					PeerAddress lessPreferred = tmanPartners.get(last);
+					tmanPartners.remove(last);
+					tmanPartners.add(last, prefer(partner, lessPreferred));
+				}
+			} else {
+				trace("empty cyclon sample");
+			}
+
+			trace("tman partners: ");
+			StringBuilder sb = new StringBuilder();
+			for (PeerAddress p : tmanPartners) {
+				sb.append(p.getPeerAddress().getId());
+				sb.append(" ");
+			}
+			trace(sb.toString());
+
         }
     };
 //-------------------------------------------------------------------	
@@ -106,6 +136,26 @@ public final class TMan extends ComponentDefinition {
 
         }
     };
+
+	public PeerAddress prefer(PeerAddress p1, PeerAddress p2){
+    	int u1 = peerUtility(p1);
+    	int u2 = peerUtility(p2);
+		if ((u1 > utility && u2 < utility)
+				|| (Math.abs(u1 - utility) < Math.abs(u2 - utility))) {
+    		return p1;
+    	}
+    	else{
+    		return p2;
+    	}
+    }
+
+	public int peerUtility(PeerAddress peer) {
+		return (-1) * peer.getPeerAddress().getId();
+	}
+
+	public int getUtility() {
+		return utility;
+	}
 
 	public void trace(String mess) {
 		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;

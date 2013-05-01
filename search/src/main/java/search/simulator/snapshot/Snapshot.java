@@ -72,8 +72,8 @@ public class Snapshot {
 			str += reportDetails();
 			str += "###\n";
 
-			System.out.println(str);
-			FileIO.append(str, FILENAME);
+		System.out.println(str);
+		FileIO.append(str, FILENAME);
 	}
 
 //-------------------------------------------------------------------
