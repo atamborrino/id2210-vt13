@@ -120,7 +120,6 @@ public final class TMan extends ComponentDefinition {
 			if (!cyclonPartners.isEmpty()) {
 
 				for (PeerAddress partner : cyclonPartners) {
-					trace("partner: " + partner.getPeerAddress().getId());
 					if (!tmanPartners.contains(partner)) {
 						if (tmanPartners.size() < tmanPartnersSize) {
 							tmanPartners.add(partner);
