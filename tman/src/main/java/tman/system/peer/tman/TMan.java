@@ -98,13 +98,9 @@ public final class TMan extends ComponentDefinition {
 					}
 				}
 
-				List<PeerAddress> view = new ArrayList<PeerAddress>();
+				List<PeerAddress> view = new ArrayList<PeerAddress>(tmanPartners);
 				view.add(self);
-				for (PeerAddress p : tmanPartners) {
-					if (!p.equals(partner)) {
-						view.add(p);
-					}
-				}
+				view.remove(partner);
 				// Collections.sort(view, new UtilityComparator(partner));
 				// Collections.reverse(view);
 				trigger(new TManPartnersRequest(self, partner, view), networkPort);
@@ -177,13 +173,10 @@ public final class TMan extends ComponentDefinition {
 			}
 			Collections.reverse(tmanPartners);
 
-			List<PeerAddress> view = new ArrayList<PeerAddress>();
+			List<PeerAddress> view = new ArrayList<PeerAddress>(tmanPartners);
 			view.add(self);
-			for (PeerAddress p : tmanPartners) {
-				if (!p.equals(event.getPeerSource())) {
-					view.add(p);
-				}
-			}
+			view.remove(event.getPeerSource());
+
 			// Collections.sort(view, new
 			// UtilityComparator(event.getPeerSource()));
 			// Collections.reverse(view);
@@ -232,8 +225,9 @@ public final class TMan extends ComponentDefinition {
 	}
 
 	public void trace(String mess) {
-		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
-		logger.info(toWrite);
+		// String toWrite = "Node" + self.getPeerAddress().getId() + ". " +
+		// mess;
+		// logger.info(toWrite);
 	}
 
 }

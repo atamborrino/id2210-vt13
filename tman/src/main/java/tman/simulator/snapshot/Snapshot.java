@@ -49,17 +49,17 @@ public class Snapshot {
 
 //-------------------------------------------------------------------
 	public static void report() {
-		PeerAddress[] peersList = new PeerAddress[peers.size()];
-		peers.keySet().toArray(peersList);
-		
-		String str = new String();
-		str += "current time: " + counter++ + "\n";
-		str += reportNetworkState();
-		str += reportDetails();
-		str += "###\n";
-		
-		System.out.println(str);
-		FileIO.append(str, FILENAME);
+		// PeerAddress[] peersList = new PeerAddress[peers.size()];
+		// peers.keySet().toArray(peersList);
+		//
+		// String str = new String();
+		// str += "current time: " + counter++ + "\n";
+		// str += reportNetworkState();
+		// str += reportDetails();
+		// str += "###\n";
+		//
+		// System.out.println(str);
+		// FileIO.append(str, FILENAME);
 	}
 
 //-------------------------------------------------------------------
