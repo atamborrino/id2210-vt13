@@ -89,12 +89,13 @@ public final class TMan extends ComponentDefinition {
 			if (!tmanPartners.isEmpty()) {
 				// With high probability, shuffle with preferred neighbor
 				PeerAddress partner;
-				Random rand = new Random();
-				float proba = rand.nextFloat();
-				if (proba < 0.8) {
-					partner = tmanPartners.get(0);
-				} else {
-					partner = tmanPartners.get(rand.nextInt(tmanPartners.size() - 1));
+				partner = tmanPartners.get(0);
+				if (tmanPartners.size() > 1) {
+					Random rand = new Random();
+					if (rand.nextFloat() > 0.8) { // Don't select the preferred
+													// neighbor
+						partner = tmanPartners.get(rand.nextInt(tmanPartners.size() - 1));
+					}
 				}
 
 				List<PeerAddress> view = new ArrayList<PeerAddress>();
