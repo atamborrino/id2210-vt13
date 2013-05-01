@@ -17,7 +17,7 @@ public class UtilityComparator implements Comparator<PeerAddress> {
 	public int compare(PeerAddress p1, PeerAddress p2) {
 		int u1 = peerUtility(p1);
 		int u2 = peerUtility(p2);
-		if ((u1 > utility && u2 < utility) || (Math.abs(u1 - utility) < Math.abs(u2 - utility))) {
+		if (((u1 > utility) && (u2 < utility)) || (Math.abs(u1 - utility) < Math.abs(u2 - utility))) {
 			return 1;
 		} else {
 			return -1;

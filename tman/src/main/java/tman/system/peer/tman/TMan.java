@@ -99,6 +99,7 @@ public final class TMan extends ComponentDefinition {
 
 				Random random = new Random();
 				PeerAddress partner = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
+				trace("partner: " + partner.getPeerAddress().getId());
 
 				if (!tmanPartners.contains(partner)) {
 					if (tmanPartners.size() < tmanPartnersSize) {
@@ -113,6 +114,7 @@ public final class TMan extends ComponentDefinition {
 					}
 
 					Collections.sort(tmanPartners, uComparator);
+					Collections.reverse(tmanPartners);
 				}
 
 			} else {
