@@ -35,7 +35,7 @@ public final class TMan extends ComponentDefinition {
 	private long period;
 	private PeerAddress self;
 	private int utility;
-	private List<PeerAddress> tmanPartners;
+	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
 	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
 	private TManConfiguration tmanConfiguration;
 	private final int tmanPartnersSize = 5;
