@@ -96,6 +96,10 @@ public final class Search extends ComponentDefinition {
 		subscribe(handleIndexShuffleRequest, networkPort);
 		subscribe(handleIndexShuffleResp1Handler, networkPort);
 		subscribe(handleIndexShuffleResp2Handler, networkPort);
+		subscribe(handleLeaderElectionRequest, networkPort);
+		subscribe(handleLeaderElectionResponse, networkPort);
+		subscribe(handleLeaderElectionResult, networkPort);
+
     }
 //-------------------------------------------------------------------	
     Handler<SearchInit> handleInit = new Handler<SearchInit>() {
@@ -198,10 +202,6 @@ public final class Search extends ComponentDefinition {
 			IndexWriter w = new IndexWriter(index, config);
 			Document doc = new Document();
 			doc.add(new TextField("title", title, Field.Store.YES));
-			// You may need to make the StringField searchable by
-			// NumericRangeQuery. See:
-			// http://stackoverflow.com/questions/13958431/lucene-4-0-indexwriter-updatedocument-for-numeric-term
-			// http://lucene.apache.org/core/4_2_0/core/org/apache/lucene/document/IntField.html
 			doc.add(new IntField("id", intId, Field.Store.YES));
 			w.addDocument(doc);
 			w.close();
@@ -410,7 +410,6 @@ public final class Search extends ComponentDefinition {
 			if (tmanSamples.equals(tmanPartners)) {
 				currentConvergence++;
 				if (currentConvergence >= CONVERGENCE_TRHESHOLD) {
-					trace("Gradient convergence");
 					gradientHasConverged = true;
 					if (!onGoingElection && leader == null) {
 						// try to see if I am the leader
@@ -425,6 +424,7 @@ public final class Search extends ComponentDefinition {
 							trace("Launching new election");
 							onGoingElection = true;
 							leaderElectionAcks = 0;
+							electionId++;
 							for (PeerAddress peer : tmanPartners) {
 								// start quorum based leader election
 								trigger(new LeaderElectionRequest(self, peer, electionId), networkPort);
@@ -444,9 +444,11 @@ public final class Search extends ComponentDefinition {
     Handler<LeaderElectionRequest> handleLeaderElectionRequest = new Handler<LeaderElectionRequest>() {
 	@Override
 		public void handle(LeaderElectionRequest event) {
+			trace("Leader election request recveid");
 			PeerAddress asker = event.getPeerSource();
 			boolean askerIsLeader = true;
-			if (isLeader || leader != null || uComparator.peerUtility(self) > uComparator.peerUtility(asker)) {
+			if (isLeader || leader != null || !gradientHasConverged
+					|| uComparator.peerUtility(self) > uComparator.peerUtility(asker)) {
 				askerIsLeader = false;
 			} else {
 				for (PeerAddress peer : tmanPartners) {
@@ -455,6 +457,7 @@ public final class Search extends ComponentDefinition {
 					}
 				}
 			}
+			trace("Resp to " + asker.getPeerAddress().getId() + " he is the leader: " + askerIsLeader);
 			trigger(new LeaderElectionResponse(self, asker, askerIsLeader, event.getElectionId()), networkPort);
 	}
 	};
@@ -463,6 +466,7 @@ public final class Search extends ComponentDefinition {
 		@Override
 		public void handle(LeaderElectionResponse event) {
 			if (event.getElectionId() == electionId) {
+				trace("Receive response that I am the leader:" + event.isLeader());
 				if (event.isLeader()) {
 					leaderElectionAcks++;
 					if (leaderElectionAcks > (tmanPartners.size() / 2 + 1)) {
@@ -475,6 +479,7 @@ public final class Search extends ComponentDefinition {
 							trigger(new LeaderElectionResult(self, peer, tmanPartners), networkPort);
 						}
 						onGoingElection = false;
+						electionId++;
 					}
 				} else {
 					trace("Election failed");
@@ -489,6 +494,7 @@ public final class Search extends ComponentDefinition {
 	Handler<LeaderElectionResult> handleLeaderElectionResult = new Handler<LeaderElectionResult>() {
 		@Override
 		public void handle(LeaderElectionResult event) {
+			trace("Received new leader result");
 			leader = event.getPeerSource();
 			electionGroup = event.getElectionGroup();
 		}
