@@ -10,7 +10,7 @@ public class IndexShuffleRequest extends PeerMessage {
 	private Set<Integer> missing;
 
 	public IndexShuffleRequest(PeerAddress source, PeerAddress destination,
-			Set<Integer> missing, int lastIndex) {
+ Set<Integer> missing, int lastIndex) {
 		super(source, destination);
 		this.lastIndex = lastIndex;
 		this.missing = missing;
