@@ -2,6 +2,7 @@ package search.system.peer.search;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -88,7 +89,7 @@ public final class Search extends ComponentDefinition {
 	private boolean ANTI_ENTROPY_ON = false;
 
 	// TMan
-	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
+	private List<PeerAddress> tmanPartners = Collections.synchronizedList(new ArrayList<PeerAddress>());
 	private final int CONVERGENCE_TRHESHOLD = 8;
 	private int currentConvergence = 0;
 	private boolean gradientHasConverged = false;
