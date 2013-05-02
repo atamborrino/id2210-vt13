@@ -58,33 +58,34 @@ import cyclon.system.peer.cyclon.CyclonSamplePort;
 
 /**
  * Should have some comments here.
+ * 
  * @author jdowling
  */
 public final class Search extends ComponentDefinition {
 
-    private static final Logger logger = LoggerFactory.getLogger(Search.class);
-    Positive<IndexPort> indexPort = positive(IndexPort.class);
-    Positive<Network> networkPort = positive(Network.class);
-    Positive<Timer> timerPort = positive(Timer.class);
-    Negative<Web> webPort = negative(Web.class);
-    Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
-    Positive<TManSamplePort> tmanSamplePort = positive(TManSamplePort.class);
+	private static final Logger logger = LoggerFactory.getLogger(Search.class);
+	Positive<IndexPort> indexPort = positive(IndexPort.class);
+	Positive<Network> networkPort = positive(Network.class);
+	Positive<Timer> timerPort = positive(Timer.class);
+	Negative<Web> webPort = negative(Web.class);
+	Positive<CyclonSamplePort> cyclonSamplePort = positive(CyclonSamplePort.class);
+	Positive<TManSamplePort> tmanSamplePort = positive(TManSamplePort.class);
 
-    ArrayList<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
-    Random randomGenerator = new Random();
-    private PeerAddress self;
-    private long period;
-    private double num;
-    private SearchConfiguration searchConfiguration;
-    // Apache Lucene used for searching
-    StandardAnalyzer analyzer = new StandardAnalyzer(Version.LUCENE_42);
-    Directory index = new RAMDirectory();
-    IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
+	ArrayList<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
+	Random randomGenerator = new Random();
+	private PeerAddress self;
+	private long period;
+	private double num;
+	private SearchConfiguration searchConfiguration;
+	// Apache Lucene used for searching
+	StandardAnalyzer analyzer = new StandardAnalyzer(Version.LUCENE_42);
+	Directory index = new RAMDirectory();
+	IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
 	// Anti-entropy search
 	int lastIndex = 0;
 	private Set<Integer> missingIndices = new HashSet<Integer>();
-	
+
 	// TMan
 	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
 	private final int CONVERGENCE_TRHESHOLD = 10;
@@ -100,21 +101,27 @@ public final class Search extends ComponentDefinition {
 	// Gradient
 	protected static final long ADD_REQ_TIMEOUT = 5000;
 	int addRequestId = 0;
-	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used to resend in case of timeout
+	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used
+																				// to
+																				// resend
+																				// in
+																				// case
+																				// of
+																				// timeout
 	int monotonicEntryId = 1;
 	Map<Integer, Integer> mapEntryIdNbAcks = new HashMap<Integer, Integer>();
 	Map<Integer, AddRequest> mapEntryIdAddReqs = new HashMap<Integer, AddRequest>();
 
 	private UtilityComparator uComparator;
 
-//-------------------------------------------------------------------	
-    public Search() {
+	// -------------------------------------------------------------------
+	public Search() {
 
-        subscribe(handleInit, control);
-        subscribe(handleWebRequest, webPort);
-        subscribe(handleCyclonSample, cyclonSamplePort);
-        subscribe(handleTManSample, tmanSamplePort);
-        subscribe(handleAddIndexText, indexPort);
+		subscribe(handleInit, control);
+		subscribe(handleWebRequest, webPort);
+		subscribe(handleCyclonSample, cyclonSamplePort);
+		subscribe(handleTManSample, tmanSamplePort);
+		subscribe(handleAddIndexText, indexPort);
 
 		subscribe(handleIndexShuffleRequest, networkPort);
 		subscribe(handleIndexShuffleResp1Handler, networkPort);
@@ -124,50 +131,50 @@ public final class Search extends ComponentDefinition {
 		subscribe(handleLeaderElectionResult, networkPort);
 		subscribe(handlerAddRequestTimeout, timerPort);
 
-    }
-//-------------------------------------------------------------------	
-    Handler<SearchInit> handleInit = new Handler<SearchInit>() {
-        public void handle(SearchInit init) {
-            self = init.getSelf();
-            num = init.getNum();
-            searchConfiguration = init.getConfiguration();
-            period = searchConfiguration.getPeriod();
+	}
+
+	// -------------------------------------------------------------------
+	Handler<SearchInit> handleInit = new Handler<SearchInit>() {
+		public void handle(SearchInit init) {
+			self = init.getSelf();
+			num = init.getNum();
+			searchConfiguration = init.getConfiguration();
+			period = searchConfiguration.getPeriod();
 
 			uComparator = new UtilityComparator(self);
 
-            SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
-            rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
-            trigger(rst, timerPort);
+			SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
+			rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
+			trigger(rst, timerPort);
 
-            Snapshot.updateNum(self, num);
-            try {
-                String title = "The Art of Computer Science";
+			Snapshot.updateNum(self, num);
+			try {
+				String title = "The Art of Computer Science";
 				String id = "1";
-                addEntry(title,id);
-            } catch (IOException ex) {
-                java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-                System.exit(-1);
-            }
-        }
-    };
+				addEntry(title, id);
+			} catch (IOException ex) {
+				java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+				System.exit(-1);
+			}
+		}
+	};
 
+	Handler<WebRequest> handleWebRequest = new Handler<WebRequest>() {
+		public void handle(WebRequest event) {
+			if (event.getDestination() != self.getPeerAddress().getId()) {
+				return;
+			}
 
-    Handler<WebRequest> handleWebRequest = new Handler<WebRequest>() {
-        public void handle(WebRequest event) {
-            if (event.getDestination() != self.getPeerAddress().getId()) {
-                return;
-            }
+			String[] args = event.getTarget().split("-");
 
-            String[] args = event.getTarget().split("-");
-
-            logger.debug("Handling Webpage Request");
-            WebResponse response;
-            if (args[0].compareToIgnoreCase("search") == 0) {
-                response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
+			logger.debug("Handling Webpage Request");
+			WebResponse response;
+			if (args[0].compareToIgnoreCase("search") == 0) {
+				response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
 				trigger(response, webPort);
-            } else if (args[0].compareToIgnoreCase("add") == 0) {
+			} else if (args[0].compareToIgnoreCase("add") == 0) {
 				String text = args[1];
-				
+
 				if (isLeader) {
 					trigger(new AddRequest(self, self, addRequestId, text, event), networkPort);
 				} else if (leader != null) {
@@ -190,12 +197,12 @@ public final class Search extends ComponentDefinition {
 					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
 					trigger(st, timerPort);
 				}
-            }
+			}
 
-        }
-    };
-    
-    Handler<AddRequestTimeout> handlerAddRequestTimeout = new Handler<AddRequestTimeout>() {
+		}
+	};
+
+	Handler<AddRequestTimeout> handlerAddRequestTimeout = new Handler<AddRequestTimeout>() {
 		@Override
 		public void handle(AddRequestTimeout event) {
 			AddRequest req = mapAddReqs.get(event.getReqId());
@@ -211,13 +218,37 @@ public final class Search extends ComponentDefinition {
 	Handler<AddRequest> handlerAddRequest = new Handler<AddRequest>() {
 		@Override
 		public void handle(AddRequest event) {
-			if (isLeader) {
+			if (isLeader) { // the node is the leader
 				monotonicEntryId++;
-				response = new WebResponse(addEntryHtml(text, args[2]), event, 1, 1); // remove
+				// add entry to index
+				try {
+					addEntry(event.getText(), String.valueOf(monotonicEntryId));
+				} catch (IOException e) {
+					logger.error(e.getLocalizedMessage());
+					e.printStackTrace();
+				}
+				// order the election group to add the entry
+				for (PeerAddress p : electionGroup) {
+					trigger(new AddOrder(self, p, event.getText(), monotonicEntryId), networkPort);
+				}
+			} else if (leader != null) { // the node is in the election group,
+											// forward request to the leader
+				trigger(new AddRequest(event.getPeerSource(), leader, event.getReqId(), event.getText(),
+						event.getWebReq()), networkPort);
+			} else { // the node is not in the election group, forward request
+						// to a random higher peer in the gradient
+				PeerAddress dest = getRndHigherPeer();
+				if (dest != null) {// if no higher peer in the gradient, the
+									// request is lost & will be resent after
+									// timeout
+					trigger(new AddRequest(event.getPeerSource(), dest, event.getReqId(), event.getText(),
+							event.getWebReq()), networkPort);
+				}
+
 			}
 		}
 	};
-	
+
 	Handler<AddOrder> handlerAddOrder = new Handler<AddOrder>() {
 		@Override
 		public void handle(AddOrder event) {
@@ -242,8 +273,7 @@ public final class Search extends ComponentDefinition {
 				mapEntryIdNbAcks.put(event.getEntryId(), nbAcks);
 				if (nbAcks == (electionGroup.size() / 2) + 1) {
 					AddRequest initialReq = mapEntryIdAddReqs.get(event.getEntryId());
-					String resp = addEntryHtml(initialReq.getText(),
-							String.valueOf(event.getEntryId()));
+					String resp = addEntryHtml(initialReq.getText(), String.valueOf(event.getEntryId()));
 					trigger(new WebResponse(resp, initialReq.getWebReq(), 1, 1), webPort);
 					mapEntryIdAddReqs.remove(event.getEntryId());
 					mapEntryIdNbAcks.remove(event.getEntryId());
@@ -252,54 +282,53 @@ public final class Search extends ComponentDefinition {
 		}
 	};
 
+	private String searchPageHtml(String title) {
+		StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
+		sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
+		sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
+		sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
+		sb.append("<title>Kompics P2P Bootstrap Server</title>");
+		sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
+		sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
+		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
+		sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>");
+		try {
+			query(sb, title);
+		} catch (ParseException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			sb.append(ex.getMessage());
+		} catch (IOException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			sb.append(ex.getMessage());
+		}
+		sb.append("</body></html>");
+		return sb.toString();
+	}
 
-    private String searchPageHtml(String title) {
-        StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
-        sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
-        sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
-        sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
-        sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
-        sb.append("<title>Kompics P2P Bootstrap Server</title>");
-        sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
-        sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
-        sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
-        sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>");
-        try {
-            query(sb, title);
-        } catch (ParseException ex) {
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-            sb.append(ex.getMessage());
-        } catch (IOException ex) {
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-            sb.append(ex.getMessage());
-        }
-        sb.append("</body></html>");
-        return sb.toString();
-    }
+	private String addEntryHtml(String title, String id) {
+		StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
+		sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
+		sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
+		sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
+		sb.append("<title>Adding an Entry</title>");
+		sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
+		sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
+		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
+		sb.append("ID2210 Uploaded Entry</h2><br>");
+		try {
+			addEntry(title, id);
+			sb.append("Entry: ").append(title).append(" - ").append(id);
+		} catch (IOException ex) {
+			sb.append(ex.getMessage());
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+		}
+		sb.append("</body></html>");
+		return sb.toString();
+	}
 
-    private String addEntryHtml(String title, String id) {
-        StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
-        sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
-        sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
-        sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
-        sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
-        sb.append("<title>Adding an Entry</title>");
-        sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
-        sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
-        sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
-        sb.append("ID2210 Uploaded Entry</h2><br>");
-        try {
-            addEntry(title, id);
-            sb.append("Entry: ").append(title).append(" - ").append(id);
-        } catch (IOException ex) {
-            sb.append(ex.getMessage());
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        sb.append("</body></html>");
-        return sb.toString();
-    }
-
-    private void addEntry(String title, String id) throws IOException {
+	private void addEntry(String title, String id) throws IOException {
 		int intId = Integer.valueOf(id);
 		if ((intId > lastIndex) || (missingIndices.contains(intId))) {
 			IndexWriter w = new IndexWriter(index, config);
@@ -324,43 +353,45 @@ public final class Search extends ComponentDefinition {
 			lastIndex = intId;
 		}
 
-    }
+	}
 
-    private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
+	private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
 
-        // the "title" arg specifies the default field to use when no field is explicitly specified in the query.
-        Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
-        IndexSearcher searcher = null;
-        IndexReader reader = null;
-        try {
-            reader = DirectoryReader.open(index);
-            searcher = new IndexSearcher(reader);
-        } catch (IOException ex) {
-            java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
-            System.exit(-1);
-        }
+		// the "title" arg specifies the default field to use when no field is
+		// explicitly specified in the query.
+		Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
+		IndexSearcher searcher = null;
+		IndexReader reader = null;
+		try {
+			reader = DirectoryReader.open(index);
+			searcher = new IndexSearcher(reader);
+		} catch (IOException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			System.exit(-1);
+		}
 
-        int hitsPerPage = 10;
-        TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+		int hitsPerPage = 10;
+		TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
 
-        searcher.search(q, collector);
-        ScoreDoc[] hits = collector.topDocs().scoreDocs;
+		searcher.search(q, collector);
+		ScoreDoc[] hits = collector.topDocs().scoreDocs;
 
-        // display results
-        sb.append("Found ").append(hits.length).append(" entries.<ul>");
-        for (int i = 0; i < hits.length; ++i) {
-            int docId = hits[i].doc;
-            Document d = searcher.doc(docId);
-            sb.append("<li>").append(i + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title")).append("</li>");
-        }
-        sb.append("</ul>");
+		// display results
+		sb.append("Found ").append(hits.length).append(" entries.<ul>");
+		for (int i = 0; i < hits.length; ++i) {
+			int docId = hits[i].doc;
+			Document d = searcher.doc(docId);
+			sb.append("<li>").append(i + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title"))
+					.append("</li>");
+		}
+		sb.append("</ul>");
 
-        // reader can only be closed when there
-        // is no need to access the documents any more.
-        reader.close();
-        return sb.toString();
-    }
-    
+		// reader can only be closed when there
+		// is no need to access the documents any more.
+		reader.close();
+		return sb.toString();
+	}
+
 	private Set<Document> getWantedIndices(Set<Integer> wantedIndices, int fromIndex) throws IOException {
 		Set<Document> wantedDocs = new HashSet<Document>();
 
@@ -385,8 +416,7 @@ public final class Search extends ComponentDefinition {
 		// wantedDocs.add(d);
 		// }
 		for (int j = fromIndex + 1; j <= lastIndex; j++) {
-			Query query1 = NumericRangeQuery.newIntRange("id", 1, j, j, true,
-					true);
+			Query query1 = NumericRangeQuery.newIntRange("id", 1, j, j, true, true);
 			ScoreDoc[] hits1 = searcher.search(query1, lastIndex + 1).scoreDocs;
 			for (int i = 0; i < hits1.length; ++i) {
 				int docId1 = hits1[i].doc;
@@ -472,12 +502,12 @@ public final class Search extends ComponentDefinition {
 		}
 	};
 
-    Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
-        @Override
-        public void handle(CyclonSample event) {
-            // receive a new list of neighbours
-	    cyclonPartners = event.getSample();
-            // Pick a node or more, and exchange index with them
+	Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
+		@Override
+		public void handle(CyclonSample event) {
+			// receive a new list of neighbours
+			cyclonPartners = event.getSample();
+			// Pick a node or more, and exchange index with them
 			Snapshot.updateCyclonPartners(self, cyclonPartners);
 			if (cyclonPartners.isEmpty()) {
 				trace("received empty cyclon sample");
@@ -490,13 +520,13 @@ public final class Search extends ComponentDefinition {
 				Snapshot.updateRandSelectedPeer(self, peer);
 				trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
 			}
-        }
-    };
+		}
+	};
 
-    Handler<TManSample> handleTManSample = new Handler<TManSample>() {
+	Handler<TManSample> handleTManSample = new Handler<TManSample>() {
 		@Override
-        public void handle(TManSample event) {
-            // receive a new list of neighbours
+		public void handle(TManSample event) {
+			// receive a new list of neighbours
 			List<PeerAddress> tmanSamples = event.getSample();
 			if (tmanSamples.equals(tmanPartners)) {
 				currentConvergence++;
@@ -505,7 +535,7 @@ public final class Search extends ComponentDefinition {
 					if (!onGoingElection && leader == null) {
 						// try to see if I am the leader
 						boolean possibleLeader = true;
-						for (PeerAddress peer: tmanPartners) {
+						for (PeerAddress peer : tmanPartners) {
 							if (uComparator.peerUtility(self) < uComparator.peerUtility(peer)) {
 								possibleLeader = false;
 							}
@@ -529,11 +559,11 @@ public final class Search extends ComponentDefinition {
 			}
 
 			tmanPartners = tmanSamples;
-        }
-    };
-    
-    Handler<LeaderElectionRequest> handleLeaderElectionRequest = new Handler<LeaderElectionRequest>() {
-	@Override
+		}
+	};
+
+	Handler<LeaderElectionRequest> handleLeaderElectionRequest = new Handler<LeaderElectionRequest>() {
+		@Override
 		public void handle(LeaderElectionRequest event) {
 			trace("Leader election request recveid");
 			PeerAddress asker = event.getPeerSource();
@@ -550,7 +580,7 @@ public final class Search extends ComponentDefinition {
 			}
 			trace("Resp to " + asker.getPeerAddress().getId() + " he is the leader: " + askerIsLeader);
 			trigger(new LeaderElectionResponse(self, asker, askerIsLeader, event.getElectionId()), networkPort);
-	}
+		}
 	};
 
 	Handler<LeaderElectionResponse> handleLeaderElectionResponse = new Handler<LeaderElectionResponse>() {
@@ -590,33 +620,33 @@ public final class Search extends ComponentDefinition {
 			electionGroup = event.getElectionGroup();
 		}
 	};
-	
-    private List<PeerAddress> getHigherTmanPartners() {
-    	List<PeerAddress> higherPeers = new ArrayList<PeerAddress>();
-    	for(PeerAddress peer: tmanPartners) {
-    		if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
-    			higherPeers.add(peer);
-    		} else {
-    			break;
-    		}
-    	}
-    	return higherPeers;
-    }
-    
-    private PeerAddress getRndHigherPeer() {
-    	List<PeerAddress> higherPeers = getHigherTmanPartners();
-    	if (!higherPeers.isEmpty()) {
-    		Random rand = new Random();
-    		return higherPeers.get(rand.nextInt(higherPeers.size() - 1));    		
-    	} else {
-    		return null;
-    	}
-    }
 
-//-------------------------------------------------------------------	
-    Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
-        @Override
-        public void handle(AddIndexText event) {
+	private List<PeerAddress> getHigherTmanPartners() {
+		List<PeerAddress> higherPeers = new ArrayList<PeerAddress>();
+		for (PeerAddress peer : tmanPartners) {
+			if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
+				higherPeers.add(peer);
+			} else {
+				break;
+			}
+		}
+		return higherPeers;
+	}
+
+	private PeerAddress getRndHigherPeer() {
+		List<PeerAddress> higherPeers = getHigherTmanPartners();
+		if (!higherPeers.isEmpty()) {
+			Random rand = new Random();
+			return higherPeers.get(rand.nextInt(higherPeers.size() - 1));
+		} else {
+			return null;
+		}
+	}
+
+	// -------------------------------------------------------------------
+	Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
+		@Override
+		public void handle(AddIndexText event) {
 			// Random r = new Random(System.currentTimeMillis());
 			// String id = Integer.toString(r.nextInt(100000));
 			// logger.info(self.getPeerAddress().getId()
@@ -628,9 +658,9 @@ public final class Search extends ComponentDefinition {
 			// null, ex);
 			// throw new IllegalArgumentException(ex.getMessage());
 			// }
-        }
-    };
-    
+		}
+	};
+
 	public void trace(String mess) {
 		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
 		logger.info(toWrite);
