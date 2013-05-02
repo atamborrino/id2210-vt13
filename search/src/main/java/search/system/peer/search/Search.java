@@ -101,16 +101,10 @@ public final class Search extends ComponentDefinition {
 	// Gradient
 	protected static final long ADD_REQ_TIMEOUT = 5000;
 	int addRequestId = 0;
-	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used
-																				// to
-																				// resend
-																				// in
-																				// case
-																				// of
-																				// timeout
+	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used by adder to resend in case of timeout
 	int monotonicEntryId = 1;
-	Map<Integer, Integer> mapEntryIdNbAcks = new HashMap<Integer, Integer>();
-	Map<Integer, AddRequest> mapEntryIdAddReqs = new HashMap<Integer, AddRequest>();
+	Map<Integer, Integer> mapEntryIdNbAcks = new HashMap<Integer, Integer>(); // used by master
+	Map<Integer, AddRequest> mapEntryIdAddReqs = new HashMap<Integer, AddRequest>(); // used by master
 
 	private UtilityComparator uComparator;
 
@@ -175,9 +169,7 @@ public final class Search extends ComponentDefinition {
 			} else if (args[0].compareToIgnoreCase("add") == 0) {
 				String text = args[1];
 
-				if (isLeader) {
-					trigger(new AddRequest(self, self, addRequestId, text, event), networkPort);
-				} else if (leader != null) {
+				if (leader != null) {
 					addRequestId++;
 					AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
 					mapAddReqs.put(addRequestId, req);
@@ -201,8 +193,15 @@ public final class Search extends ComponentDefinition {
 
 		}
 	};
-
-	Handler<AddRequestTimeout> handlerAddRequestTimeout = new Handler<AddRequestTimeout>() {
+    
+    Handler<AddRequestAck> handlerAddRequestAck = new Handler<AddRequestAck>() {
+		@Override
+		public void handle(AddRequestAck event) {
+			mapAddReqs.remove(event.getReqId());
+		}
+	};
+    
+    Handler<AddRequestTimeout> handlerAddRequestTimeout = new Handler<AddRequestTimeout>() {
 		@Override
 		public void handle(AddRequestTimeout event) {
 			AddRequest req = mapAddReqs.get(event.getReqId());
@@ -271,10 +270,11 @@ public final class Search extends ComponentDefinition {
 			if (nbAcks != null) {
 				nbAcks++;
 				mapEntryIdNbAcks.put(event.getEntryId(), nbAcks);
-				if (nbAcks == (electionGroup.size() / 2) + 1) {
+				if (nbAcks >= (electionGroup.size() / 2) + 1) {
 					AddRequest initialReq = mapEntryIdAddReqs.get(event.getEntryId());
 					String resp = addEntryHtml(initialReq.getText(), String.valueOf(event.getEntryId()));
 					trigger(new WebResponse(resp, initialReq.getWebReq(), 1, 1), webPort);
+					trigger(new AddRequestAck(self, initialReq.getPeerSource(), initialReq.getReqId()), networkPort);
 					mapEntryIdAddReqs.remove(event.getEntryId());
 					mapEntryIdNbAcks.remove(event.getEntryId());
 				}
