@@ -89,7 +89,7 @@ public final class Search extends ComponentDefinition {
 
 	// TMan
 	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
-	private final int CONVERGENCE_TRHESHOLD = 10;
+	private final int CONVERGENCE_TRHESHOLD = 8;
 	private int currentConvergence = 0;
 	private boolean gradientHasConverged = false;
 	private boolean isLeader = false;
@@ -100,7 +100,7 @@ public final class Search extends ComponentDefinition {
 	private List<PeerAddress> electionGroup;
 
 	// Gradient
-	protected static final long ADD_REQ_TIMEOUT = 5000;
+	protected static final long ADD_REQ_TIMEOUT = 10000;
 	int addRequestId = 0;
 	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used by adder to resend in case of timeout
 	int monotonicEntryId = 1;
@@ -182,13 +182,9 @@ public final class Search extends ComponentDefinition {
 			String[] args = event.getTarget().split("-");
 
 			logger.debug("Handling Webpage Request");
-			WebResponse response;
-			if (args[0].compareToIgnoreCase("search") == 0) {
-				response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
-				trigger(response, webPort);
-			} else if (args[0].compareToIgnoreCase("add") == 0) {
-				String text = args[1];
 
+			if (args[0].compareToIgnoreCase("add") == 0) {
+				String text = args[1];
 				if (leader != null) {
 					addRequestId++;
 					AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
@@ -209,6 +205,10 @@ public final class Search extends ComponentDefinition {
 					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
 					trigger(st, timerPort);
 				}
+			} else if (args[0].compareToIgnoreCase("search") == 0) {
+				trigger(new WebResponse(searchPageHtml(args[1]), event, 1, 1), webPort);
+			} else {
+				trigger(new WebResponse(searchPageHtml(event.getTarget()), event, 1, 1), webPort);
 			}
 
 		}
@@ -247,8 +247,10 @@ public final class Search extends ComponentDefinition {
 					e.printStackTrace();
 				}
 				// order the election group to add the entry
-				for (PeerAddress p : electionGroup) {
-					trigger(new AddOrder(self, p, event.getText(), monotonicEntryId), networkPort);
+				mapEntryIdAddReqs.put(monotonicEntryId, event);
+				mapEntryIdNbAcks.put(monotonicEntryId, 0);
+				for (PeerAddress peer : electionGroup) {
+					trigger(new AddOrder(self, peer, event.getText(), monotonicEntryId), networkPort);
 				}
 			} else if (leader != null) { // the node is in the election group,
 											// forward request to the leader
@@ -271,7 +273,7 @@ public final class Search extends ComponentDefinition {
 	Handler<AddOrder> handlerAddOrder = new Handler<AddOrder>() {
 		@Override
 		public void handle(AddOrder event) {
-			if (event.getSource().equals(leader)) {
+			if (event.getPeerSource().equals(leader)) {
 				try {
 					addEntry(event.getText(), String.valueOf(event.getEntryId()));
 					trigger(new AddOrderAck(self, leader, event.getEntryId()), networkPort);
@@ -581,7 +583,7 @@ public final class Search extends ComponentDefinition {
 			cyclonPartners = event.getSample();
 			Snapshot.updateCyclonPartners(self, cyclonPartners);
 			if (cyclonPartners.isEmpty()) {
-				trace("received empty cyclon sample");
+				// trace("received empty cyclon sample");
 			}
 			if (ANTI_ENTROPY_ON) {
 				// Pick a node or more, and exchange index with them
@@ -669,7 +671,7 @@ public final class Search extends ComponentDefinition {
 						leader = self;
 						electionGroup = new ArrayList<PeerAddress>(tmanPartners); // copy
 						for (PeerAddress peer : tmanPartners) {
-							trigger(new LeaderElectionResult(self, peer, tmanPartners), networkPort);
+							trigger(new LeaderElectionResult(self, peer, electionGroup), networkPort);
 						}
 						onGoingElection = false;
 						electionId++;
