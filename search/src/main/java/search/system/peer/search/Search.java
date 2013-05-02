@@ -118,13 +118,28 @@ public final class Search extends ComponentDefinition {
 		subscribe(handleTManSample, tmanSamplePort);
 		subscribe(handleAddIndexText, indexPort);
 
+		// anti-entropy
 		subscribe(handleIndexShuffleRequest, networkPort);
 		subscribe(handleIndexShuffleResp1Handler, networkPort);
 		subscribe(handleIndexShuffleResp2Handler, networkPort);
+
+		// pull-based
+		subscribe(handleIndexPullRequest, networkPort);
+		subscribe(handleIndexPullResponse, networkPort);
+		subscribe(handleUpdateIndexTimeout, timerPort);
+
+		// leader selection
 		subscribe(handleLeaderElectionRequest, networkPort);
 		subscribe(handleLeaderElectionResponse, networkPort);
 		subscribe(handleLeaderElectionResult, networkPort);
+
+		// adding index entry
+		subscribe(handlerAddOrder, networkPort);
+		subscribe(handlerAddOrderAck, networkPort);
+		subscribe(handlerAddRequest, networkPort);
+		subscribe(handlerAddRequestAck, networkPort);
 		subscribe(handlerAddRequestTimeout, timerPort);
+
 
 	}
 
