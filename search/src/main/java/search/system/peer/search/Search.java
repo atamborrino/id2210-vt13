@@ -445,6 +445,27 @@ public final class Search extends ComponentDefinition {
 		}
 	}
 
+	// ----------------------------INDEX
+	// SHUFFLING----------------------------------
+
+	// ----------------------------PULL-BASED------------------------------------
+	Handler<IndexPullRequest> handleIndexPullRequest = new Handler<IndexPullRequest>() {
+
+		@Override
+		public void handle(IndexPullRequest event) {
+			Set<Document> requestedDocs = null;
+			try {
+				requestedDocs = getWantedIndices(event.getMissing(), event.getLastIndex());
+			} catch (IOException e) {
+				logger.debug(e.getLocalizedMessage());
+				e.printStackTrace();
+			}
+
+			trigger(new IndexPullResponse(self, event.getPeerSource(), requestedDocs), networkPort);
+		}
+	};
+
+	// -------------------------------ANTI-ENTROPY----------------------------------
 	Handler<IndexShuffleRequest> handleIndexShuffleRequest = new Handler<IndexShuffleRequest>() {
 		@Override
 		public void handle(IndexShuffleRequest event) {
@@ -452,7 +473,7 @@ public final class Search extends ComponentDefinition {
 			try {
 				requestedDocs = getWantedIndices(event.getMissing(), event.getLastIndex());
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
+				logger.debug(e.getLocalizedMessage());
 				e.printStackTrace();
 			}
 
@@ -501,6 +522,8 @@ public final class Search extends ComponentDefinition {
 			}
 		}
 	};
+
+	// ---------------------------------------------------------------------------------
 
 	Handler<CyclonSample> handleCyclonSample = new Handler<CyclonSample>() {
 		@Override
