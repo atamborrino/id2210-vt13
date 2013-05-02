@@ -450,7 +450,8 @@ public final class Search extends ComponentDefinition {
 		}
 	}
 
-	// ----------------------------INDEX SHUFFLING -------
+
+	// ----------------------------INDEX SHUFFLING---------------------------
 
 	// ----------------------------PULL-BASED------------------------------------
 
@@ -481,7 +482,25 @@ public final class Search extends ComponentDefinition {
 		}
 	};
 
+	Handler<IndexPullResponse> handleIndexPullResponse = new Handler<IndexPullResponse>() {
+
+		@Override
+		public void handle(IndexPullResponse event) {
+			// update index
+			try {
+				updateIndex(event.getEntries());
+			} catch (IOException e) {
+				logger.debug(e.getLocalizedMessage());
+				e.printStackTrace();
+			}
+
+		}
+
+	};
+
+
 	// -------------------------------ANTI-ENTROPY----------------------------------
+
 	Handler<IndexShuffleRequest> handleIndexShuffleRequest = new Handler<IndexShuffleRequest>() {
 		@Override
 		public void handle(IndexShuffleRequest event) {
@@ -509,7 +528,7 @@ public final class Search extends ComponentDefinition {
 			try {
 				updateIndex(event.getSentEntries());
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
+				logger.debug(e.getLocalizedMessage());
 				e.printStackTrace();
 			}
 
@@ -517,7 +536,7 @@ public final class Search extends ComponentDefinition {
 			try {
 				requestedDocs = getWantedIndices(event.getWantedEntries(), event.getLastIndex());
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
+				logger.debug(e.getLocalizedMessage());
 				e.printStackTrace();
 			}
 
@@ -533,7 +552,7 @@ public final class Search extends ComponentDefinition {
 			try {
 				updateIndex(event.getSentEntries());
 			} catch (IOException e) {
-				// TODO Auto-generated catch block
+				logger.debug(e.getLocalizedMessage());
 				e.printStackTrace();
 			}
 		}
