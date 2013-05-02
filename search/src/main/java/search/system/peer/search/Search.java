@@ -82,9 +82,10 @@ public final class Search extends ComponentDefinition {
 	Directory index = new RAMDirectory();
 	IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
 
-	// Anti-entropy search
-	int lastIndex = 0;
+	// Indices
+	private int lastIndex = 0;
 	private Set<Integer> missingIndices = new HashSet<Integer>();
+	private boolean ANTI_ENTROPY_ON = false;
 
 	// TMan
 	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
@@ -140,6 +141,10 @@ public final class Search extends ComponentDefinition {
 			SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
 			rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
 			trigger(rst, timerPort);
+
+			SchedulePeriodicTimeout st = new SchedulePeriodicTimeout(period, period);
+			st.setTimeoutEvent(new IndexPullTimeout(st));
+			trigger(st, timerPort);
 
 			Snapshot.updateNum(self, num);
 			try {
@@ -445,10 +450,21 @@ public final class Search extends ComponentDefinition {
 		}
 	}
 
-	// ----------------------------INDEX
-	// SHUFFLING----------------------------------
+	// ----------------------------INDEX SHUFFLING -------
 
 	// ----------------------------PULL-BASED------------------------------------
+
+	Handler<UpdateIndexTimeout> handleUpdateIndexTimeout = new Handler<UpdateIndexTimeout>() {
+
+		@Override
+		public void handle(UpdateIndexTimeout event) {
+			PeerAddress higherPeer = getRndHigherPeer();
+			if (higherPeer != null) {
+				trigger(new IndexPullRequest(self, higherPeer, missingIndices, lastIndex), networkPort);
+			}
+		}
+	};
+
 	Handler<IndexPullRequest> handleIndexPullRequest = new Handler<IndexPullRequest>() {
 
 		@Override
@@ -530,18 +546,18 @@ public final class Search extends ComponentDefinition {
 		public void handle(CyclonSample event) {
 			// receive a new list of neighbours
 			cyclonPartners = event.getSample();
-			// Pick a node or more, and exchange index with them
 			Snapshot.updateCyclonPartners(self, cyclonPartners);
 			if (cyclonPartners.isEmpty()) {
 				trace("received empty cyclon sample");
 			}
-
-			// ANTI-ENTROPY
-			if (!cyclonPartners.isEmpty()) {
-				Random random = new Random();
-				PeerAddress peer = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
-				Snapshot.updateRandSelectedPeer(self, peer);
-				trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
+			if (ANTI_ENTROPY_ON) {
+				// Pick a node or more, and exchange index with them
+				if (!cyclonPartners.isEmpty()) {
+					Random random = new Random();
+					PeerAddress peer = cyclonPartners.get(random.nextInt(cyclonPartners.size()));
+					Snapshot.updateRandSelectedPeer(self, peer);
+					trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
+				}
 			}
 		}
 	};
