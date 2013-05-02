@@ -2,8 +2,10 @@ package search.system.peer.search;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 import java.util.Set;
 import java.util.logging.Level;
@@ -36,6 +38,7 @@ import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
+import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
 import se.sics.kompics.web.Web;
 import se.sics.kompics.web.WebRequest;
@@ -81,6 +84,26 @@ public final class Search extends ComponentDefinition {
 	// Anti-entropy search
 	int lastIndex = 0;
 	private Set<Integer> missingIndices = new HashSet<Integer>();
+	
+	// TMan
+	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
+	private final int CONVERGENCE_TRHESHOLD = 10;
+	private int currentConvergence = 0;
+	private boolean gradientHasConverged = false;
+	private boolean isLeader = false;
+	private boolean onGoingElection = false;
+	private int leaderElectionAcks = 0;
+	private int electionId = 0;
+	private PeerAddress leader = null;
+	private List<PeerAddress> electionGroup;
+
+	// Gradient
+	protected static final long ADD_REQ_TIMEOUT = 5000;
+	int addRequestId = 0;
+	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used to resend in case of timeout
+	int monotonicEntryId = 1;
+	Map<Integer, Integer> mapEntryIdNbAcks = new HashMap<Integer, Integer>();
+	Map<Integer, AddRequest> mapEntryIdAddReqs = new HashMap<Integer, AddRequest>();
 
 	private UtilityComparator uComparator;
 
@@ -99,6 +122,7 @@ public final class Search extends ComponentDefinition {
 		subscribe(handleLeaderElectionRequest, networkPort);
 		subscribe(handleLeaderElectionResponse, networkPort);
 		subscribe(handleLeaderElectionResult, networkPort);
+		subscribe(handlerAddRequestTimeout, timerPort);
 
     }
 //-------------------------------------------------------------------	
@@ -109,7 +133,7 @@ public final class Search extends ComponentDefinition {
             searchConfiguration = init.getConfiguration();
             period = searchConfiguration.getPeriod();
 
-	    uComparator = new UtilityComparator(self);
+			uComparator = new UtilityComparator(self);
 
             SchedulePeriodicTimeout rst = new SchedulePeriodicTimeout(period, period);
             rst.setTimeoutEvent(new UpdateIndexTimeout(rst));
@@ -140,15 +164,94 @@ public final class Search extends ComponentDefinition {
             WebResponse response;
             if (args[0].compareToIgnoreCase("search") == 0) {
                 response = new WebResponse(searchPageHtml(args[1]), event, 1, 1);
+				trigger(response, webPort);
             } else if (args[0].compareToIgnoreCase("add") == 0) {
-                response = new WebResponse(addEntryHtml(args[1], args[2]), event, 1, 1);
-            } else {
-                response = new WebResponse(searchPageHtml(event
-                        .getTarget()), event, 1, 1);
+				String text = args[1];
+				
+				if (isLeader) {
+					trigger(new AddRequest(self, self, addRequestId, text, event), networkPort);
+				} else if (leader != null) {
+					addRequestId++;
+					AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
+					mapAddReqs.put(addRequestId, req);
+					trigger(req, networkPort);
+					ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
+					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
+					trigger(st, timerPort);
+				} else {
+					PeerAddress toSendTo = getRndHigherPeer();
+					addRequestId++;
+					AddRequest req = new AddRequest(self, toSendTo, addRequestId, text, event);
+					mapAddReqs.put(addRequestId, req);
+					if (toSendTo != null) {
+						trigger(req, networkPort);
+					}
+					ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
+					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
+					trigger(st, timerPort);
+				}
             }
-            trigger(response, webPort);
+
         }
     };
+    
+    Handler<AddRequestTimeout> handlerAddRequestTimeout = new Handler<AddRequestTimeout>() {
+		@Override
+		public void handle(AddRequestTimeout event) {
+			AddRequest req = mapAddReqs.get(event.getReqId());
+			if (req != null) {
+				trigger(req, networkPort);
+				ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
+				st.setTimeoutEvent(new AddRequestTimeout(st, event.getReqId()));
+				trigger(st, timerPort);
+			}
+		}
+	};
+
+	Handler<AddRequest> handlerAddRequest = new Handler<AddRequest>() {
+		@Override
+		public void handle(AddRequest event) {
+			if (isLeader) {
+				monotonicEntryId++;
+				response = new WebResponse(addEntryHtml(text, args[2]), event, 1, 1); // remove
+			}
+		}
+	};
+	
+	Handler<AddOrder> handlerAddOrder = new Handler<AddOrder>() {
+		@Override
+		public void handle(AddOrder event) {
+			if (event.getSource().equals(leader)) {
+				try {
+					addEntry(event.getText(), String.valueOf(event.getEntryId()));
+					trigger(new AddOrderAck(self, leader, event.getEntryId()), networkPort);
+				} catch (IOException e) {
+					logger.error(e.getLocalizedMessage());
+					e.printStackTrace();
+				}
+			}
+		}
+	};
+
+	Handler<AddOrderAck> handlerAddOrderAck = new Handler<AddOrderAck>() {
+		@Override
+		public void handle(AddOrderAck event) {
+			Integer nbAcks = mapEntryIdNbAcks.get(event.getEntryId());
+			if (nbAcks != null) {
+				nbAcks++;
+				mapEntryIdNbAcks.put(event.getEntryId(), nbAcks);
+				if (nbAcks == (electionGroup.size() / 2) + 1) {
+					AddRequest initialReq = mapEntryIdAddReqs.get(event.getEntryId());
+					String resp = addEntryHtml(initialReq.getText(),
+							String.valueOf(event.getEntryId()));
+					trigger(new WebResponse(resp, initialReq.getWebReq(), 1, 1), webPort);
+					mapEntryIdAddReqs.remove(event.getEntryId());
+					mapEntryIdNbAcks.remove(event.getEntryId());
+				}
+			}
+		}
+	};
+
 
     private String searchPageHtml(String title) {
         StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
@@ -389,18 +492,6 @@ public final class Search extends ComponentDefinition {
 			}
         }
     };
-    
-	// TMan
-	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
-	private final int CONVERGENCE_TRHESHOLD = 10;
-	private int currentConvergence = 0;
-	private boolean gradientHasConverged = false;
-	private boolean isLeader = false;
-	private boolean onGoingElection = false;
-	private int leaderElectionAcks = 0;
-	private int electionId = 0;
-	private PeerAddress leader = null;
-	private List<PeerAddress> electionGroup;
 
     Handler<TManSample> handleTManSample = new Handler<TManSample>() {
 		@Override
@@ -499,6 +590,28 @@ public final class Search extends ComponentDefinition {
 			electionGroup = event.getElectionGroup();
 		}
 	};
+	
+    private List<PeerAddress> getHigherTmanPartners() {
+    	List<PeerAddress> higherPeers = new ArrayList<PeerAddress>();
+    	for(PeerAddress peer: tmanPartners) {
+    		if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
+    			higherPeers.add(peer);
+    		} else {
+    			break;
+    		}
+    	}
+    	return higherPeers;
+    }
+    
+    private PeerAddress getRndHigherPeer() {
+    	List<PeerAddress> higherPeers = getHigherTmanPartners();
+    	if (!higherPeers.isEmpty()) {
+    		Random rand = new Random();
+    		return higherPeers.get(rand.nextInt(higherPeers.size() - 1));    		
+    	} else {
+    		return null;
+    	}
+    }
 
 //-------------------------------------------------------------------	
     Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
