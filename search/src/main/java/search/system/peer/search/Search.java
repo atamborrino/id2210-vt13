@@ -362,7 +362,6 @@ public final class Search extends ComponentDefinition {
 			// trace("Add entry id:" + intId);
 		}
 
-		// anti-entropy
 		trace("addEntry id: " + intId);
 		missingIndices.remove(intId);
 		if (lastIndex < intId) {
@@ -708,9 +707,15 @@ public final class Search extends ComponentDefinition {
 
 	private PeerAddress getRndHigherPeer() {
 		List<PeerAddress> higherPeers = getHigherTmanPartners();
+
 		if (!higherPeers.isEmpty()) {
-			Random rand = new Random();
-			return higherPeers.get(rand.nextInt(higherPeers.size() - 1));
+			if (higherPeers.size() > 1) {
+				Random rand = new Random();
+				return higherPeers.get(rand.nextInt(higherPeers.size() - 1));
+			} else {
+				return higherPeers.get(0);
+			}
+
 		} else {
 			return null;
 		}
