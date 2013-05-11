@@ -7,8 +7,10 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.logging.Level;
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
@@ -38,7 +40,9 @@ import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
+import se.sics.kompics.Stop;
 import se.sics.kompics.network.Network;
+import se.sics.kompics.timer.CancelTimeout;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
 import se.sics.kompics.timer.ScheduleTimeout;
 import se.sics.kompics.timer.Timer;
@@ -103,6 +107,8 @@ public final class Search extends ComponentDefinition {
 
 	// Gradient
 	protected static final long ADD_REQ_TIMEOUT = 10000;
+	protected static final long HEARTBEAT_TIMEOUT = 23000;
+	protected static final long SEND_HEARTBEAT_TIMEOUT = 10000;
 	int addRequestId = 0;
 	Map<Integer, AddRequest> mapAddReqs = new HashMap<Integer, AddRequest>(); // used by adder to resend in case of timeout
 	int monotonicEntryId = 1;
@@ -110,6 +116,12 @@ public final class Search extends ComponentDefinition {
 	Map<Integer, AddRequest> mapEntryIdAddReqs = new HashMap<Integer, AddRequest>(); // used by master
 
 	private UtilityComparator uComparator;
+
+	// Failure
+	private Map<PeerAddress, UUID> electionGroupHb = new HashMap<PeerAddress, UUID>();
+	private UUID leaderHb;
+	private int leaderSuspicion = 0;
+	private boolean newElectionGroup = false;
 
 	// -------------------------------------------------------------------
 	public Search() {
@@ -142,6 +154,14 @@ public final class Search extends ComponentDefinition {
 		subscribe(handlerAddRequestAck, networkPort);
 		subscribe(handlerAddRequestTimeout, timerPort);
 
+		// failure handling
+		subscribe(handleHeartbeat, networkPort);
+		subscribe(handleHeartbeatTimeout, timerPort);
+		subscribe(handleLeaderDeadMsg, networkPort);
+		subscribe(handleSendHeartbeatTimeout, timerPort);
+
+		subscribe(handleKillLeaderTimeout, timerPort);
+
 
 	}
 
@@ -162,6 +182,10 @@ public final class Search extends ComponentDefinition {
 			SchedulePeriodicTimeout st = new SchedulePeriodicTimeout(period, period);
 			st.setTimeoutEvent(new IndexPullTimeout(st));
 			trigger(st, timerPort);
+
+			SchedulePeriodicTimeout st1 = new SchedulePeriodicTimeout(SEND_HEARTBEAT_TIMEOUT, SEND_HEARTBEAT_TIMEOUT);
+			st1.setTimeoutEvent(new sendHeartbeatTimeout(st1));
+			trigger(st1, timerPort);
 
 			Snapshot.updateNum(self, num);
 			try {
@@ -609,6 +633,7 @@ public final class Search extends ComponentDefinition {
 	Handler<TManSample> handleTManSample = new Handler<TManSample>() {
 		@Override
 		public void handle(TManSample event) {
+
 			// receive a new list of neighbours
 			List<PeerAddress> tmanSamples = event.getSample();
 			if (tmanSamples.equals(tmanPartners)) {
@@ -616,6 +641,7 @@ public final class Search extends ComponentDefinition {
 				if (currentConvergence >= CONVERGENCE_TRHESHOLD) {
 					gradientHasConverged = true;
 					if (!onGoingElection && leader == null) {
+
 						// try to see if I am the leader
 						boolean possibleLeader = true;
 						for (PeerAddress peer : tmanPartners) {
@@ -624,6 +650,7 @@ public final class Search extends ComponentDefinition {
 							}
 						}
 						if (possibleLeader) {
+							trace("gradient converged, leader null, I am possible leader");
 							// launch new election
 							trace("Launching new election");
 							onGoingElection = true;
@@ -634,6 +661,14 @@ public final class Search extends ComponentDefinition {
 								trigger(new LeaderElectionRequest(self, peer, electionId), networkPort);
 							}
 						}
+					} else if (isLeader && newElectionGroup) {
+						// new election group
+						electionGroup = new ArrayList<PeerAddress>(tmanPartners); // copy
+						for (PeerAddress peer : tmanPartners) {
+							trigger(new LeaderElectionResult(self, peer, electionGroup), networkPort);
+						}
+
+						newElectionGroup = false;
 					}
 				}
 			} else {
@@ -684,6 +719,12 @@ public final class Search extends ComponentDefinition {
 						}
 						onGoingElection = false;
 						electionId++;
+
+						// ScheduleTimeout st = new ScheduleTimeout(4000);
+						// KillLeaderTimeout tmt = new KillLeaderTimeout(st);
+						// st.setTimeoutEvent(tmt);
+						// trigger(st, timerPort);
+
 					}
 				} else {
 					trace("Election failed");
@@ -695,17 +736,28 @@ public final class Search extends ComponentDefinition {
 		}
 	};
 
+	Handler<KillLeaderTimeout> handleKillLeaderTimeout = new Handler<KillLeaderTimeout>() {
+
+		@Override
+		public void handle(KillLeaderTimeout event) {
+
+			trigger(new Stop(), control);
+
+		}
+	};
+
 	Handler<LeaderElectionResult> handleLeaderElectionResult = new Handler<LeaderElectionResult>() {
 		@Override
 		public void handle(LeaderElectionResult event) {
 			trace("Received new leader result");
 			leader = event.getPeerSource();
 			electionGroup = event.getElectionGroup();
+			
 		}
 	};
 
 	private List<PeerAddress> getHigherTmanPartners() {
-		List<PeerAddress> higherPeers = new ArrayList<PeerAddress>();
+		List<PeerAddress> higherPeers = Collections.synchronizedList(new ArrayList<PeerAddress>());
 		for (PeerAddress peer : tmanPartners) {
 			if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
 				higherPeers.add(peer);
@@ -731,6 +783,105 @@ public final class Search extends ComponentDefinition {
 			return null;
 		}
 	}
+
+	Handler<sendHeartbeatTimeout> handleSendHeartbeatTimeout = new Handler<sendHeartbeatTimeout>() {
+
+		@Override
+		public void handle(sendHeartbeatTimeout event) {
+			if (isLeader) {
+				for (PeerAddress p : electionGroup) {
+					trigger(new Heartbeat(self, p), networkPort);
+				}
+			} else if (leader != null) {
+				trigger(new Heartbeat(self, leader), networkPort);
+			}
+		}
+	};
+
+	Handler<Heartbeat> handleHeartbeat = new Handler<Heartbeat>() {
+
+		@Override
+		public void handle(Heartbeat event) {
+
+			if (isLeader) {
+				int peerId = event.getPeerSource().getPeerAddress().getId();
+				if (electionGroupHb.containsKey(peerId)) {
+					CancelTimeout ct = new CancelTimeout(electionGroupHb.get(peerId));
+					trigger(ct, timerPort);
+
+					ScheduleTimeout st = new ScheduleTimeout(HEARTBEAT_TIMEOUT);
+					HeartbeatTimeout hbTimeout = new HeartbeatTimeout(st);
+					electionGroupHb.put(event.getPeerSource(), hbTimeout.getTimeoutId());
+					st.setTimeoutEvent(hbTimeout);
+					trigger(st, timerPort);
+				} else {// leader alive
+
+					if (event.getPeerSource().equals(leader)) {
+						CancelTimeout ct = new CancelTimeout(leaderHb);
+					trigger(ct, timerPort);
+
+					ScheduleTimeout st = new ScheduleTimeout(HEARTBEAT_TIMEOUT);
+					HeartbeatTimeout hbTimeout = new HeartbeatTimeout(st);
+						leaderHb = hbTimeout.getTimeoutId();
+					st.setTimeoutEvent(hbTimeout);
+					trigger(st, timerPort);
+				}
+
+				}
+
+			}
+
+		}
+	};
+
+	Handler<HeartbeatTimeout> handleHeartbeatTimeout = new Handler<HeartbeatTimeout>() {
+
+		@Override
+		public void handle(HeartbeatTimeout event) {
+			if (!isLeader && event.getTimeoutId() == leaderHb) {
+				// suspect leader
+				trace("I suspect the leader to be dead");
+				for (PeerAddress p : electionGroup) {
+					trigger(new LeaderDeadMessage(self, p), networkPort);
+				}
+			} else {
+				PeerAddress peer = null;
+				for (Entry<PeerAddress, UUID> e : electionGroupHb.entrySet()) {
+					if (e.getValue().equals(event.getTimeoutId())) {
+						peer = e.getKey();
+					}
+				}
+				tmanPartners.remove(peer);
+				currentConvergence = 0;
+				gradientHasConverged = false;
+				newElectionGroup = true;
+
+				trace("I am the leader and I have hadetected a death in election group");
+
+			}
+		}
+	};
+
+	Handler<LeaderDeadMessage> handleLeaderDeadMsg = new Handler<LeaderDeadMessage>() {
+
+		@Override
+		public void handle(LeaderDeadMessage event) {
+			leaderSuspicion++;
+
+			if (!(leader == null) && leaderSuspicion == ((electionGroup.size() / 2) + 1)) {
+				// quorum of election group suspect leader
+				trace("Elecion group quorum says leader dead");
+
+				leaderSuspicion = 0;
+				tmanPartners.remove(leader);
+				leader = null;
+				gradientHasConverged = false;
+				currentConvergence = 0;
+
+			}
+
+		}
+	};
 
 	// -------------------------------------------------------------------
 	Handler<AddIndexText> handleAddIndexText = new Handler<AddIndexText>() {
