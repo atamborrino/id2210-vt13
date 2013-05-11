@@ -30,6 +30,7 @@ import org.apache.lucene.search.TopScoreDocCollector;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.RAMDirectory;
 import org.apache.lucene.util.Version;
+import org.mortbay.jetty.Request;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -180,36 +181,49 @@ public final class Search extends ComponentDefinition {
 				return;
 			}
 
-			String[] args = event.getTarget().split("-");
+			Request jettyReq = event.getRequest();
+			String relativepath = null;
+			try {
+				relativepath = jettyReq.getUri().getPath().split("/")[2];
+			} catch (IndexOutOfBoundsException e) {
 
-			logger.debug("Handling Webpage Request");
-
-			if (args[0].compareToIgnoreCase("add") == 0) {
-				String text = args[1];
-				if (leader != null) {
-					addRequestId++;
-					AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
-					mapAddReqs.put(addRequestId, req);
-					trigger(req, networkPort);
-					ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
-					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
-					trigger(st, timerPort);
-				} else {
-					PeerAddress toSendTo = getRndHigherPeer();
-					addRequestId++;
-					AddRequest req = new AddRequest(self, toSendTo, addRequestId, text, event);
-					mapAddReqs.put(addRequestId, req);
-					if (toSendTo != null) {
-						trigger(req, networkPort);
+			}
+			if (relativepath != null) {
+				if (relativepath.equals("docs")) {
+					if (jettyReq.getMethod().equals("GET")) {
+						// search
+						String textToSeach = jettyReq.getParameter("q");
+						trigger(new WebResponse(searchPageHtml(textToSeach), event, 1, 1), webPort);
+					} else if (jettyReq.getMethod().equals("POST")) {
+						// add
+						try {
+							String text = convertStreamToString(jettyReq.getInputStream());
+							if (leader != null) {
+								addRequestId++;
+								AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
+								mapAddReqs.put(addRequestId, req);
+								trigger(req, networkPort);
+								ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
+								st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
+								trigger(st, timerPort);
+							} else {
+								PeerAddress toSendTo = getRndHigherPeer();
+								addRequestId++;
+								AddRequest req = new AddRequest(self, toSendTo, addRequestId, text, event);
+								mapAddReqs.put(addRequestId, req);
+								if (toSendTo != null) {
+									trigger(req, networkPort);
+								}
+								ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
+								st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
+								trigger(st, timerPort);
+							}
+						} catch (IOException e) {
+							// TODO Auto-generated catch block
+							e.printStackTrace();
+						}
 					}
-					ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
-					st.setTimeoutEvent(new AddRequestTimeout(st, addRequestId));
-					trigger(st, timerPort);
 				}
-			} else if (args[0].compareToIgnoreCase("search") == 0) {
-				trigger(new WebResponse(searchPageHtml(args[1]), event, 1, 1), webPort);
-			} else {
-				trigger(new WebResponse(searchPageHtml(event.getTarget()), event, 1, 1), webPort);
 			}
 
 		}
@@ -306,16 +320,13 @@ public final class Search extends ComponentDefinition {
 	};
 
 	private String searchPageHtml(String title) {
-		StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
-		sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
-		sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
-		sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+		StringBuilder sb = new StringBuilder("<html><head><meta http-equiv=\"Conten");
 		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
 		sb.append("<title>Kompics P2P Bootstrap Server</title>");
 		sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
 		sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
 		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
-		sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>");
+		sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>\n");
 		try {
 			query(sb, title);
 		} catch (ParseException ex) {
@@ -325,21 +336,18 @@ public final class Search extends ComponentDefinition {
 			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
 			sb.append(ex.getMessage());
 		}
-		sb.append("</body></html>");
+		sb.append("\n</body></html>");
 		return sb.toString();
 	}
 
 	private String addEntryHtml(String title, String id) {
-		StringBuilder sb = new StringBuilder("<!DOCTYPE html PUBLIC \"-//W3C");
-		sb.append("//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR");
-		sb.append("/xhtml1/DTD/xhtml1-transitional.dtd\"><html xmlns=\"http:");
-		sb.append("//www.w3.org/1999/xhtml\"><head><meta http-equiv=\"Conten");
+		StringBuilder sb = new StringBuilder("<html><head><meta http-equiv=\"Conten");
 		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
-		sb.append("<title>Adding an Entry</title>");
+		sb.append("<title>Kompics P2P Bootstrap Server</title>");
 		sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
 		sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
 		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
-		sb.append("ID2210 Uploaded Entry</h2><br>");
+		sb.append("ID2210 Uploaded Entry</h2><br>\n");
 		try {
 			addEntry(title, id);
 			sb.append("Entry: ").append(title).append(" - ").append(id);
@@ -403,7 +411,7 @@ public final class Search extends ComponentDefinition {
 		for (int i = 0; i < hits.length; ++i) {
 			int docId = hits[i].doc;
 			Document d = searcher.doc(docId);
-			sb.append("<li>").append(i + 1).append(". ").append(d.get("id")).append("\t").append(d.get("title"))
+			sb.append("\n<li> Id: ").append(d.get("id")).append(" ; Content: \"").append(d.get("title")).append("\"")
 					.append("</li>");
 		}
 		sb.append("</ul>");
@@ -746,5 +754,9 @@ public final class Search extends ComponentDefinition {
 		String toWrite = "Node" + self.getPeerAddress().getId() + ". " + mess;
 		logger.info(toWrite);
 	}
-
+	
+	public static String convertStreamToString(java.io.InputStream is) {
+	    java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
+	    return s.hasNext() ? s.next() : "";
+	}
 }

@@ -170,7 +170,7 @@ public final class SearchSimulator extends ComponentDefinition {
         PeerAddress peerAddress = new PeerAddress(address, id);
 
         connect(network, peer.getNegative(Network.class), new MessageDestinationFilter(address));
-        connect(timer, peer.getNegative(Timer.class));
+		connect(timer, peer.getNegative(Timer.class));
         connect(peer.getPositive(Web.class), webIncoming); //, new WebDestinationFilter(peerId));
 
 		trigger(new SearchPeerInit(peerAddress, num, bootstrapConfiguration,
