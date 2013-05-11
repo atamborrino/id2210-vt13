@@ -95,7 +95,7 @@ public final class Search extends ComponentDefinition {
 
 	// TMan
 	private List<PeerAddress> tmanPartners = Collections.synchronizedList(new ArrayList<PeerAddress>());
-	private final int CONVERGENCE_TRHESHOLD = 8;
+	private final int CONVERGENCE_TRHESHOLD = 5;
 	private int currentConvergence = 0;
 	private boolean gradientHasConverged = false;
 	private boolean isLeader = false;
@@ -224,7 +224,7 @@ public final class Search extends ComponentDefinition {
 							String text = convertStreamToString(jettyReq.getInputStream());
 							if (leader != null) {
 								addRequestId++;
-								AddRequest req = new AddRequest(self, leader, addRequestId, text, event);
+								AddRequest req = new AddRequest(self, leader, addRequestId, text, event, 1);
 								mapAddReqs.put(addRequestId, req);
 								trigger(req, networkPort);
 								ScheduleTimeout st = new ScheduleTimeout(ADD_REQ_TIMEOUT);
@@ -233,7 +233,7 @@ public final class Search extends ComponentDefinition {
 							} else {
 								PeerAddress toSendTo = getRndHigherPeer();
 								addRequestId++;
-								AddRequest req = new AddRequest(self, toSendTo, addRequestId, text, event);
+								AddRequest req = new AddRequest(self, toSendTo, addRequestId, text, event, 1);
 								mapAddReqs.put(addRequestId, req);
 								if (toSendTo != null) {
 									trigger(req, networkPort);
@@ -277,6 +277,7 @@ public final class Search extends ComponentDefinition {
 		@Override
 		public void handle(AddRequest event) {
 			if (isLeader) { // the node is the leader
+				trace("AddRequest rcvd: nbHops: " + event.getNbHops());
 				monotonicEntryId++;
 				// add entry to index
 				try {
@@ -294,7 +295,7 @@ public final class Search extends ComponentDefinition {
 			} else if (leader != null) { // the node is in the election group,
 											// forward request to the leader
 				trigger(new AddRequest(event.getPeerSource(), leader, event.getReqId(), event.getText(),
-						event.getWebReq()), networkPort);
+						event.getWebReq(), event.getNbHops() + 1), networkPort);
 			} else { // the node is not in the election group, forward request
 						// to a random higher peer in the gradient
 				PeerAddress dest = getRndHigherPeer();
@@ -302,7 +303,7 @@ public final class Search extends ComponentDefinition {
 									// request is lost & will be resent after
 									// timeout
 					trigger(new AddRequest(event.getPeerSource(), dest, event.getReqId(), event.getText(),
-							event.getWebReq()), networkPort);
+							event.getWebReq(), event.getNbHops() + 1), networkPort);
 				}
 
 			}
@@ -396,8 +397,7 @@ public final class Search extends ComponentDefinition {
 			Snapshot.updateEntries(self, intId);
 			// trace("Add entry id:" + intId);
 		}
-
-		trace("addEntry id: " + intId);
+		// trace("addEntry id: " + intId);
 		missingIndices.remove(intId);
 		if (lastIndex < intId) {
 			// update missing indices
@@ -407,6 +407,7 @@ public final class Search extends ComponentDefinition {
 			lastIndex = intId;
 		}
 
+		incrEntityId(intId); // for stats
 	}
 
 	private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
@@ -633,7 +634,7 @@ public final class Search extends ComponentDefinition {
 	Handler<TManSample> handleTManSample = new Handler<TManSample>() {
 		@Override
 		public void handle(TManSample event) {
-
+			nbGossipRound++;
 			// receive a new list of neighbours
 			List<PeerAddress> tmanSamples = event.getSample();
 			if (tmanSamples.equals(tmanPartners)) {
@@ -650,7 +651,10 @@ public final class Search extends ComponentDefinition {
 							}
 						}
 						if (possibleLeader) {
-							trace("gradient converged, leader null, I am possible leader");
+							// trace("gradient converged, leader null, I am possible leader");
+							if (nbFailedElections == 0) {
+								trace("The gradient has converged in " + nbGossipRound + " gossip rounds");
+							}
 							// launch new election
 							trace("Launching new election");
 							onGoingElection = true;
@@ -683,7 +687,7 @@ public final class Search extends ComponentDefinition {
 	Handler<LeaderElectionRequest> handleLeaderElectionRequest = new Handler<LeaderElectionRequest>() {
 		@Override
 		public void handle(LeaderElectionRequest event) {
-			trace("Leader election request recveid");
+			// trace("Leader election request recveid");
 			PeerAddress asker = event.getPeerSource();
 			boolean askerIsLeader = true;
 			if (isLeader || leader != null || !gradientHasConverged
@@ -696,7 +700,8 @@ public final class Search extends ComponentDefinition {
 					}
 				}
 			}
-			trace("Resp to " + asker.getPeerAddress().getId() + " he is the leader: " + askerIsLeader);
+			// trace("Resp to " + asker.getPeerAddress().getId() +
+			// " he is the leader: " + askerIsLeader);
 			trigger(new LeaderElectionResponse(self, asker, askerIsLeader, event.getElectionId()), networkPort);
 		}
 	};
@@ -705,12 +710,13 @@ public final class Search extends ComponentDefinition {
 		@Override
 		public void handle(LeaderElectionResponse event) {
 			if (event.getElectionId() == electionId) {
-				trace("Receive response that I am the leader:" + event.isLeader());
+				// trace("Receive response that I am the leader:" +
+				// event.isLeader());
 				if (event.isLeader()) {
 					leaderElectionAcks++;
 					if (leaderElectionAcks > (tmanPartners.size() / 2 + 1)) {
 						// self is elected as leader
-						trace("Election succeed. I am the leader");
+						trace("Election succeed. I am the leader. Nb of failed attempts: " + nbFailedElections);
 						isLeader = true;
 						leader = self;
 						electionGroup = new ArrayList<PeerAddress>(tmanPartners); // copy
@@ -724,13 +730,15 @@ public final class Search extends ComponentDefinition {
 						// KillLeaderTimeout tmt = new KillLeaderTimeout(st);
 						// st.setTimeoutEvent(tmt);
 						// trigger(st, timerPort);
-
+						
+						nbFailedElections = 0;
 					}
 				} else {
 					trace("Election failed");
 					electionId++;
 					leaderElectionAcks = 0;
 					onGoingElection = false;
+					nbFailedElections++;
 				}
 			}
 		}
@@ -749,14 +757,14 @@ public final class Search extends ComponentDefinition {
 	Handler<LeaderElectionResult> handleLeaderElectionResult = new Handler<LeaderElectionResult>() {
 		@Override
 		public void handle(LeaderElectionResult event) {
-			trace("Received new leader result");
+			// trace("Received new leader result");
 			leader = event.getPeerSource();
 			electionGroup = event.getElectionGroup();
 			
 		}
 	};
 
-	private List<PeerAddress> getHigherTmanPartners() {
+	synchronized private List<PeerAddress> getHigherTmanPartners() {
 		List<PeerAddress> higherPeers = Collections.synchronizedList(new ArrayList<PeerAddress>());
 		for (PeerAddress peer : tmanPartners) {
 			if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
@@ -768,7 +776,7 @@ public final class Search extends ComponentDefinition {
 		return higherPeers;
 	}
 
-	private PeerAddress getRndHigherPeer() {
+	synchronized private PeerAddress getRndHigherPeer() {
 		List<PeerAddress> higherPeers = getHigherTmanPartners();
 
 		if (!higherPeers.isEmpty()) {
@@ -909,5 +917,24 @@ public final class Search extends ComponentDefinition {
 	public static String convertStreamToString(java.io.InputStream is) {
 	    java.util.Scanner s = new java.util.Scanner(is).useDelimiter("\\A");
 	    return s.hasNext() ? s.next() : "";
+	}
+
+	// Used for collecting statistics
+	public int nbGossipRound = 0; // tman round
+	public int nbFailedElections = 0;
+	public static Map<Integer, Integer> mapConsistency = new HashMap<Integer, Integer>();
+
+	synchronized public static void incrEntityId(int entityId) {
+		Integer nb = mapConsistency.get(entityId);
+		if (nb == null) {
+			logger.info("First node updated with entity id " + entityId);
+			mapConsistency.put(entityId, 1);
+		} else {
+			mapConsistency.put(entityId, nb + 1);
+			int NB_NODES = 29;
+			if ((nb + 1) == NB_NODES) {
+				logger.info("All nodes updated with entity id " + entityId);
+			}
+		}
 	}
 }

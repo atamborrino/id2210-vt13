@@ -10,12 +10,14 @@ public class AddRequest extends PeerMessage {
 	private final int reqId;
 	private final String text;
 	private final WebRequest webReq;
+	private final int nbHops;
 
-	public AddRequest(PeerAddress source, PeerAddress destination, int reqId, String text, WebRequest webReq) {
+	public AddRequest(PeerAddress source, PeerAddress destination, int reqId, String text, WebRequest webReq, int nbHops) {
 		super(source, destination);
 		this.reqId = reqId;
 		this.text = text;
 		this.webReq = webReq;
+		this.nbHops = nbHops;
 	}
 
 	/**
@@ -33,6 +35,10 @@ public class AddRequest extends PeerMessage {
 
 	public WebRequest getWebReq() {
 		return webReq;
+	}
+
+	public int getNbHops() {
+		return nbHops;
 	}
 
 }
