@@ -766,12 +766,18 @@ public final class Search extends ComponentDefinition {
 
 	synchronized private List<PeerAddress> getHigherTmanPartners() {
 		List<PeerAddress> higherPeers = Collections.synchronizedList(new ArrayList<PeerAddress>());
-		for (PeerAddress peer : tmanPartners) {
-			if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
-				higherPeers.add(peer);
-			} else {
-				break;
-			}
+		try {
+			synchronized (tmanPartners) {
+				for (PeerAddress peer : tmanPartners) {
+					if (uComparator.peerUtility(peer) > uComparator.peerUtility(self)) {
+						higherPeers.add(peer);
+					} else {
+						break;
+					}
+				}
+			}			
+		} catch (Exception e) {
+
 		}
 		return higherPeers;
 	}
