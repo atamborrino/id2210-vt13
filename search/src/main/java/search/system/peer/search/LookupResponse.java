@@ -12,11 +12,14 @@ public class LookupResponse extends PeerMessage{
 
 	private List<Document> results;
 	private int reqId;
+	private String querystr;
 
-	public LookupResponse(PeerAddress source, PeerAddress destination, int reqId, List<Document> results) {
+	public LookupResponse(PeerAddress source, PeerAddress destination, int reqId, String querystr,
+			List<Document> results) {
 		super(source, destination);
 		this.results = results;
 		this.reqId = reqId;
+		this.querystr = querystr;
 	}
 
 	public List<Document> getResults() {
@@ -25,6 +28,10 @@ public class LookupResponse extends PeerMessage{
 
 	public int getReqId() {
 		return reqId;
+	}
+
+	public String getQuerystr() {
+		return querystr;
 	}
 
 }

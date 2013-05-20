@@ -236,7 +236,14 @@ public final class Search extends ComponentDefinition {
 
 						// Partition
 						// send query to partners
-						lookupReqId++;
+						// lookup in local index
+						int idx = self.getPeerAddress().getId() % partitionNb;
+						List<Document> res = lookup(textToSeach);
+
+						if (!lookupResults.containsKey(idx)) {
+							lookupResults.put(idx, res);
+						}
+
 						for (Map.Entry<Integer, List<PeerAddress>> entry : otherPartners.entrySet()) {
 							for (PeerAddress p : entry.getValue()) {
 								trigger(new LookupRequest(self, p, lookupReqId, textToSeach), networkPort);
@@ -479,16 +486,9 @@ public final class Search extends ComponentDefinition {
 		@Override
 		public void handle(LookupRequest event) {
 			trace("got lookup request for " + event.getQuerystr());
-			// lookup in local index
-			int idx = self.getPeerAddress().getId() % partitionNb;
-			List<Document> res = lookup(event.getQuerystr());
 
-			if (!lookupResults.containsKey(idx)) {
-				lookupResults.put(idx, res);
-			}
-
-			trigger(new LookupResponse(self, event.getPeerSource(), event.getReqId(), lookup(event.getQuerystr())),
-					networkPort);
+			trigger(new LookupResponse(self, event.getPeerSource(), event.getReqId(), event.getQuerystr(),
+					lookup(event.getQuerystr())), networkPort);
 
 		}
 	};
@@ -499,12 +499,13 @@ public final class Search extends ComponentDefinition {
 		public void handle(LookupResponse event) {
 			if (event.getReqId() == lookupReqId) {
 				int partitionId = event.getPeerSource().getPeerAddress().getId()%partitionNb;
-				if (!lookupResults.containsKey(partitionId)){
+				if (!lookupResults.containsKey(partitionId) || lookupResults.get(partitionId).isEmpty()) {
 					lookupResults.put(partitionId, event.getResults());
 				}
 				// Wait 1 result from each partition
-				if (lookupResults.size() == partitionNb - 1) {
-					createLookupResult();
+				if (lookupResults.size() == partitionNb) {
+					lookupReqId++;
+					createLookupResult(event.getQuerystr());
 				}
 				trace("got lookup response : lookupResults.size == " + lookupResults.size());
 			}
@@ -565,7 +566,71 @@ public final class Search extends ComponentDefinition {
 		}
 	}
 
-	private void createLookupResult() {
+	private void createLookupResult(String querystr) {
+		// Create new index
+		StandardAnalyzer analyzer = new StandardAnalyzer(Version.LUCENE_42);
+		Directory index1 = new RAMDirectory();
+
+		IndexWriterConfig config = new IndexWriterConfig(Version.LUCENE_42, analyzer);
+		IndexWriter w = null;
+		try {
+			w = new IndexWriter(index1, config);
+		} catch (IOException e) {
+			logger.debug(e.getLocalizedMessage());
+			e.printStackTrace();
+		}
+
+		// int nbHits = 0;
+		int id = 1;
+		for (Map.Entry<Integer, List<Document>> entry : lookupResults.entrySet()) {
+			// nbHits += entry.getValue().size();
+			for (Document d : entry.getValue()) {
+				try {
+					addDoc(w, d.get("title"), id++);
+				} catch (IOException e) {
+					logger.debug(e.getLocalizedMessage());
+					e.printStackTrace();
+				}
+			}
+
+		}
+		try {
+			w.close();
+		} catch (IOException e1) {
+			logger.debug(e1.getLocalizedMessage());
+			e1.printStackTrace();
+		}
+
+		Query q = null;
+		try {
+			q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
+		} catch (ParseException e1) {
+			logger.debug(e1.getLocalizedMessage());
+			e1.printStackTrace();
+		}
+		IndexSearcher searcher = null;
+		IndexReader reader = null;
+		try {
+			reader = DirectoryReader.open(index1);
+			searcher = new IndexSearcher(reader);
+		} catch (IOException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			System.exit(-1);
+		}
+
+		int hitsPerPage = 100;
+		TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+		try {
+			searcher.search(q, collector);
+		} catch (IOException e) {
+			logger.debug(e.getLocalizedMessage());
+			e.printStackTrace();
+		}
+		ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+		// /////////////////
+
 		StringBuilder sb = new StringBuilder("<html><head><meta http-equiv=\"Conten");
 		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
 		sb.append("<title>Kompics P2P Bootstrap Server</title>");
@@ -574,19 +639,25 @@ public final class Search extends ComponentDefinition {
 		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
 		sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>\n");
 
-		int nbHits = 0;
-		for (Map.Entry<Integer, List<Document>> entry : lookupResults.entrySet()) {
-			nbHits += entry.getValue().size();
-			for (Document d : entry.getValue()) {
-				sb.append("\n<li> Id: ").append(d.get("id")).append(" ; Content: \"").append(d.get("title"))
-						.append("\"").append("</li>");
-			}
+		sb.append("Found ").append(hits.length).append(" entries.<ul>");
 
+		for (int i = 0; i < hits.length; ++i) {
+			int docId = hits[i].doc;
+			Document d = null;
+			try {
+				d = searcher.doc(docId);
+			} catch (IOException e) {
+				logger.debug(e.getLocalizedMessage());
+				e.printStackTrace();
+			}
+			sb.append("\n<li> Id: ").append(d.get("id")).append(" ; Content: \"").append(d.get("title")).append("\"")
+					.append("</li>");
 		}
 
-		sb.append("Found ").append(nbHits).append(" entries.<ul>");
-
 		sb.append("\n</body></html>");
+
+		// clear the map
+		lookupResults.clear();
 
 		trigger(new WebResponse(sb.toString(), lookupRequest, 1, 1), webPort);
 	}
@@ -648,6 +719,14 @@ public final class Search extends ComponentDefinition {
 
 		return results;
 
+	}
+
+	private static void addDoc(IndexWriter w, String title, int intId) throws IOException {
+
+		Document doc = new Document();
+		doc.add(new TextField("title", title, Field.Store.YES));
+		doc.add(new IntField("id", intId, Field.Store.YES));
+		w.addDocument(doc);
 	}
 
 	// ----------------------------INDEX SHUFFLING---------------------------
