@@ -105,6 +105,7 @@ public final class TMan extends ComponentDefinition {
 				// Collections.reverse(view);
 				trigger(new TManPartnersRequest(self, partner, view), networkPort);
 
+
 				// Publish sample to connected components
 				trigger(new TManSample(tmanPartners), tmanPartnersPort);
 			}
