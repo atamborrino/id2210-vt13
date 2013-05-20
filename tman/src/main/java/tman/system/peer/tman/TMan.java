@@ -40,6 +40,7 @@ public final class TMan extends ComponentDefinition {
 	private TManConfiguration tmanConfiguration;
 	private final int tmanPartnersSize = 5;
 	private UtilityComparator uComparator;
+	private final int partitionNb = 10;
 
 	public class TManSchedule extends Timeout {
 
@@ -120,21 +121,31 @@ public final class TMan extends ComponentDefinition {
 
 				for (PeerAddress partner : cyclonPartners) {
 					// trace("partner: " + partner.getPeerAddress().getId());
-					if (!tmanPartners.contains(partner)) {
-						if (tmanPartners.size() < tmanPartnersSize) {
-							tmanPartners.add(partner);
-						} else {
-							int last = tmanPartners.size() - 1;
-							PeerAddress lessPreferred = tmanPartners.get(last);
-							if (uComparator.compare(partner, lessPreferred) > 0) {
-								tmanPartners.remove(last);
-								tmanPartners.add(partner);
-							}
-						}
 
-						Collections.sort(tmanPartners, uComparator);
-						Collections.reverse(tmanPartners);
+					// Same partition
+					if (partner.getPeerAddress().getId() % partitionNb == self.getPeerAddress().getId() % partitionNb) {
+						if (!tmanPartners.contains(partner)) {
+							if (tmanPartners.size() < tmanPartnersSize) {
+								tmanPartners.add(partner);
+							} else {
+								int last = tmanPartners.size() - 1;
+								PeerAddress lessPreferred = tmanPartners.get(last);
+								if (uComparator.compare(partner, lessPreferred) > 0) {
+									tmanPartners.remove(last);
+									tmanPartners.add(partner);
+								}
+							}
+
+							Collections.sort(tmanPartners, uComparator);
+							Collections.reverse(tmanPartners);
+						}
+					} else {// partner from another partition
+						// Forward to connected components - Search -
+						trigger(new OtherPartitionsPartner(partner), tmanPartnersPort);
+
 					}
+
+
 				}
 
 			} else {

@@ -52,6 +52,7 @@ import se.sics.kompics.web.WebResponse;
 import search.simulator.snapshot.Snapshot;
 import search.system.peer.AddIndexText;
 import search.system.peer.IndexPort;
+import tman.system.peer.tman.OtherPartitionsPartner;
 import tman.system.peer.tman.TManSample;
 import tman.system.peer.tman.TManSamplePort;
 import tman.system.peer.tman.UtilityComparator;
@@ -123,6 +124,14 @@ public final class Search extends ComponentDefinition {
 	private int leaderSuspicion = 0;
 	private boolean newElectionGroup = false;
 
+	// Partition
+	private WebRequest lookupRequest;
+	private int lookupReqId = 0;
+	private final int otherPatnersNb = 3;
+	private final int partitionNb = 10;
+	private Map<Integer, List<PeerAddress>> otherPartners = new HashMap<Integer, List<PeerAddress>>();
+	private Map<Integer, List<Document>> lookupResults = new HashMap<Integer, List<Document>>();
+
 	// -------------------------------------------------------------------
 	public Search() {
 
@@ -162,6 +171,11 @@ public final class Search extends ComponentDefinition {
 
 		subscribe(handleKillLeaderTimeout, timerPort);
 
+		// partition
+		subscribe(handleOtherPartitionPartner, tmanSamplePort);
+		subscribe(handleLookupRequest, networkPort);
+		subscribe(handleLookupResponse, networkPort);
+
 
 	}
 
@@ -196,6 +210,8 @@ public final class Search extends ComponentDefinition {
 				java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
 				System.exit(-1);
 			}
+
+			trace("alive");
 		}
 	};
 
@@ -217,7 +233,19 @@ public final class Search extends ComponentDefinition {
 					if (jettyReq.getMethod().equals("GET")) {
 						// search
 						String textToSeach = jettyReq.getParameter("q");
-						trigger(new WebResponse(searchPageHtml(textToSeach), event, 1, 1), webPort);
+
+						// Partition
+						// send query to partners
+						lookupReqId++;
+						for (Map.Entry<Integer, List<PeerAddress>> entry : otherPartners.entrySet()) {
+							for (PeerAddress p : entry.getValue()) {
+								trigger(new LookupRequest(self, p, lookupReqId, textToSeach), networkPort);
+							}
+						}
+
+						lookupRequest = event;
+						// trigger(new WebResponse(searchPageHtml(textToSeach),
+						// event, 1, 1), webPort);
 					} else if (jettyReq.getMethod().equals("POST")) {
 						// add
 						try {
@@ -411,7 +439,6 @@ public final class Search extends ComponentDefinition {
 	}
 
 	private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
-
 		// the "title" arg specifies the default field to use when no field is
 		// explicitly specified in the query.
 		Query q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
@@ -446,6 +473,44 @@ public final class Search extends ComponentDefinition {
 		reader.close();
 		return sb.toString();
 	}
+
+	Handler<LookupRequest> handleLookupRequest = new Handler<LookupRequest>() {
+
+		@Override
+		public void handle(LookupRequest event) {
+			trace("got lookup request for " + event.getQuerystr());
+			// lookup in local index
+			int idx = self.getPeerAddress().getId() % partitionNb;
+			List<Document> res = lookup(event.getQuerystr());
+
+			if (!lookupResults.containsKey(idx)) {
+				lookupResults.put(idx, res);
+			}
+
+			trigger(new LookupResponse(self, event.getPeerSource(), event.getReqId(), lookup(event.getQuerystr())),
+					networkPort);
+
+		}
+	};
+
+	Handler<LookupResponse> handleLookupResponse = new Handler<LookupResponse>() {
+
+		@Override
+		public void handle(LookupResponse event) {
+			if (event.getReqId() == lookupReqId) {
+				int partitionId = event.getPeerSource().getPeerAddress().getId()%partitionNb;
+				if (!lookupResults.containsKey(partitionId)){
+					lookupResults.put(partitionId, event.getResults());
+				}
+				// Wait 1 result from each partition
+				if (lookupResults.size() == partitionNb - 1) {
+					createLookupResult();
+				}
+				trace("got lookup response : lookupResults.size == " + lookupResults.size());
+			}
+
+		}
+	};
 
 	private Set<Document> getWantedIndices(Set<Integer> wantedIndices, int fromIndex) throws IOException {
 		Set<Document> wantedDocs = new HashSet<Document>();
@@ -500,6 +565,90 @@ public final class Search extends ComponentDefinition {
 		}
 	}
 
+	private void createLookupResult() {
+		StringBuilder sb = new StringBuilder("<html><head><meta http-equiv=\"Conten");
+		sb.append("t-Type\" content=\"text/html; charset=utf-8\" />");
+		sb.append("<title>Kompics P2P Bootstrap Server</title>");
+		sb.append("<style type=\"text/css\"><!--.style2 {font-family: ");
+		sb.append("Arial, Helvetica, sans-serif; color: #0099FF;}--></style>");
+		sb.append("</head><body><h2 align=\"center\" class=\"style2\">");
+		sb.append("ID2210 (Decentralized Search for Piratebay)</h2><br>\n");
+
+		int nbHits = 0;
+		for (Map.Entry<Integer, List<Document>> entry : lookupResults.entrySet()) {
+			nbHits += entry.getValue().size();
+			for (Document d : entry.getValue()) {
+				sb.append("\n<li> Id: ").append(d.get("id")).append(" ; Content: \"").append(d.get("title"))
+						.append("\"").append("</li>");
+			}
+
+		}
+
+		sb.append("Found ").append(nbHits).append(" entries.<ul>");
+
+		sb.append("\n</body></html>");
+
+		trigger(new WebResponse(sb.toString(), lookupRequest, 1, 1), webPort);
+	}
+
+	private List<Document> lookup(String querystr) {
+
+		IndexSearcher searcher = null;
+		IndexReader reader = null;
+		Query q = null;
+		List<Document> results = new ArrayList<Document>();
+
+		try {
+			q = new QueryParser(Version.LUCENE_42, "title", analyzer).parse(querystr);
+		} catch (ParseException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+		try {
+			reader = DirectoryReader.open(index);
+			searcher = new IndexSearcher(reader);
+		} catch (IOException ex) {
+			java.util.logging.Logger.getLogger(Search.class.getName()).log(Level.SEVERE, null, ex);
+			System.exit(-1);
+		}
+
+		int hitsPerPage = 10;
+		TopScoreDocCollector collector = TopScoreDocCollector.create(hitsPerPage, true);
+
+		try {
+			searcher.search(q, collector);
+		} catch (IOException e) {
+			logger.debug(e.getLocalizedMessage());
+			e.printStackTrace();
+		}
+		ScoreDoc[] hits = collector.topDocs().scoreDocs;
+
+		for (int i = 0; i < hits.length; ++i) {
+			int docId = hits[i].doc;
+			Document d = null;
+			try {
+				d = searcher.doc(docId);
+			} catch (IOException e) {
+				logger.debug(e.getLocalizedMessage());
+				e.printStackTrace();
+			}
+
+			if (d != null) {
+				results.add(d);
+			}
+		}
+
+		try {
+			reader.close();
+		} catch (IOException e) {
+			logger.debug(e.getLocalizedMessage());
+			e.printStackTrace();
+		}
+
+		return results;
+
+	}
 
 	// ----------------------------INDEX SHUFFLING---------------------------
 
@@ -628,6 +777,25 @@ public final class Search extends ComponentDefinition {
 					trigger(new IndexShuffleRequest(self, peer, missingIndices, lastIndex), networkPort);
 				}
 			}
+		}
+	};
+
+	Handler<OtherPartitionsPartner> handleOtherPartitionPartner = new Handler<OtherPartitionsPartner>() {
+
+		@Override
+		public void handle(OtherPartitionsPartner event) {
+			PeerAddress partner = event.getPartner();
+
+			int mapId = partner.getPeerAddress().getId() % partitionNb;
+			if (!otherPartners.containsKey(mapId)) {
+				otherPartners.put(mapId, new ArrayList<PeerAddress>());
+			}
+			int mapEntrySize = otherPartners.get(mapId).size();
+			if (mapEntrySize >= otherPatnersNb) {
+				otherPartners.get(mapId).remove(0);
+			}
+			otherPartners.get(mapId).add(partner);
+
 		}
 	};
 
