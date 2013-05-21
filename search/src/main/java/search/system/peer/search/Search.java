@@ -96,7 +96,7 @@ public final class Search extends ComponentDefinition {
 
 	// TMan
 	private List<PeerAddress> tmanPartners = Collections.synchronizedList(new ArrayList<PeerAddress>());
-	private final int CONVERGENCE_TRHESHOLD = 5;
+	private final int CONVERGENCE_TRHESHOLD = 10;
 	private int currentConvergence = 0;
 	private boolean gradientHasConverged = false;
 	private boolean isLeader = false;
@@ -121,6 +121,7 @@ public final class Search extends ComponentDefinition {
 	// Failure
 	private Map<PeerAddress, UUID> electionGroupHb = new HashMap<PeerAddress, UUID>();
 	private UUID leaderHb;
+	private UUID sendHBtimeout;
 	private int leaderSuspicion = 0;
 	private boolean newElectionGroup = false;
 
@@ -199,6 +200,7 @@ public final class Search extends ComponentDefinition {
 
 			SchedulePeriodicTimeout st1 = new SchedulePeriodicTimeout(SEND_HEARTBEAT_TIMEOUT, SEND_HEARTBEAT_TIMEOUT);
 			st1.setTimeoutEvent(new sendHeartbeatTimeout(st1));
+			sendHBtimeout = st1.getTimeoutEvent().getTimeoutId();
 			trigger(st1, timerPort);
 
 			Snapshot.updateNum(self, num);
@@ -892,9 +894,15 @@ public final class Search extends ComponentDefinition {
 
 						// try to see if I am the leader
 						boolean possibleLeader = true;
+						synchronized (tmanPartners) {
+							try {
 						for (PeerAddress peer : tmanPartners) {
 							if (uComparator.peerUtility(self) < uComparator.peerUtility(peer)) {
 								possibleLeader = false;
+							}
+								}
+							} catch (Exception e) {
+
 							}
 						}
 						if (possibleLeader) {
@@ -941,9 +949,15 @@ public final class Search extends ComponentDefinition {
 					|| uComparator.peerUtility(self) > uComparator.peerUtility(asker)) {
 				askerIsLeader = false;
 			} else {
+				synchronized (tmanPartners) {
+					try {
 				for (PeerAddress peer : tmanPartners) {
 					if (uComparator.peerUtility(peer) > uComparator.peerUtility(asker)) {
 						askerIsLeader = false;
+					}
+				}
+					} catch (Exception e) {
+
 					}
 				}
 			}
@@ -1135,9 +1149,14 @@ public final class Search extends ComponentDefinition {
 
 				leaderSuspicion = 0;
 				tmanPartners.remove(leader);
+				electionGroup = null;
 				leader = null;
 				gradientHasConverged = false;
 				currentConvergence = 0;
+
+				//don't send heartbeat to dead leader
+				CancelTimeout ct1 = new CancelTimeout(sendHBtimeout);
+				trigger(ct1, timerPort);
 
 			}
 
