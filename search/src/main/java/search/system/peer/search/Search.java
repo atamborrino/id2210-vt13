@@ -129,7 +129,7 @@ public final class Search extends ComponentDefinition {
 	private int lookupReqId = 0;
 	private final int otherPartnersNb = 3; // nb of partners that we keep track
 											// of for each other partition
-	private final int PARTITION_NB = 10;
+	private final int PARTITION_NB = 10; // look also at PARTITION_NB in Tman
 	private Map<Integer, List<PeerAddress>> otherPartners = new HashMap<Integer, List<PeerAddress>>();
 	private Map<Integer, List<Document>> lookupResults = new HashMap<Integer, List<Document>>();
 
