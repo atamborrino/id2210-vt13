@@ -40,7 +40,6 @@ import se.sics.kompics.ComponentDefinition;
 import se.sics.kompics.Handler;
 import se.sics.kompics.Negative;
 import se.sics.kompics.Positive;
-import se.sics.kompics.Stop;
 import se.sics.kompics.network.Network;
 import se.sics.kompics.timer.CancelTimeout;
 import se.sics.kompics.timer.SchedulePeriodicTimeout;
@@ -96,7 +95,7 @@ public final class Search extends ComponentDefinition {
 
 	// TMan
 	private List<PeerAddress> tmanPartners = Collections.synchronizedList(new ArrayList<PeerAddress>());
-	private final int CONVERGENCE_TRHESHOLD = 10;
+	private final int CONVERGENCE_TRHESHOLD = 16;
 	private int currentConvergence = 0;
 	private boolean gradientHasConverged = false;
 	private boolean isLeader = false;
@@ -107,7 +106,7 @@ public final class Search extends ComponentDefinition {
 	private List<PeerAddress> electionGroup;
 
 	// Gradient
-	protected static final long ADD_REQ_TIMEOUT = 10000;
+	protected static final long ADD_REQ_TIMEOUT = 20000;
 	protected static final long HEARTBEAT_TIMEOUT = 23000;
 	protected static final long SEND_HEARTBEAT_TIMEOUT = 10000;
 	int addRequestId = 0;
@@ -128,8 +127,9 @@ public final class Search extends ComponentDefinition {
 	// Partition
 	private WebRequest lookupRequest;
 	private int lookupReqId = 0;
-	private final int otherPatnersNb = 3;
-	private final int partitionNb = 10;
+	private final int otherPartnersNb = 3; // nb of partners that we keep track
+											// of for each other partition
+	private final int PARTITION_NB = 10;
 	private Map<Integer, List<PeerAddress>> otherPartners = new HashMap<Integer, List<PeerAddress>>();
 	private Map<Integer, List<Document>> lookupResults = new HashMap<Integer, List<Document>>();
 
@@ -213,7 +213,7 @@ public final class Search extends ComponentDefinition {
 				System.exit(-1);
 			}
 
-			trace("alive");
+			trace("Alive");
 		}
 	};
 
@@ -239,7 +239,7 @@ public final class Search extends ComponentDefinition {
 						// Partition
 						// send query to partners
 						// lookup in local index
-						int idx = self.getPeerAddress().getId() % partitionNb;
+						int idx = self.getPeerAddress().getId() % PARTITION_NB;
 						List<Document> res = lookup(textToSeach);
 
 						if (!lookupResults.containsKey(idx)) {
@@ -444,7 +444,7 @@ public final class Search extends ComponentDefinition {
 			lastIndex = intId;
 		}
 
-		incrEntityId(intId); // for stats
+		// incrEntityId(intId); // for stats
 	}
 
 	private String query(StringBuilder sb, String querystr) throws ParseException, IOException {
@@ -500,12 +500,12 @@ public final class Search extends ComponentDefinition {
 		@Override
 		public void handle(LookupResponse event) {
 			if (event.getReqId() == lookupReqId) {
-				int partitionId = event.getPeerSource().getPeerAddress().getId()%partitionNb;
+				int partitionId = event.getPeerSource().getPeerAddress().getId()%PARTITION_NB;
 				if (!lookupResults.containsKey(partitionId) || lookupResults.get(partitionId).isEmpty()) {
 					lookupResults.put(partitionId, event.getResults());
 				}
 				// Wait 1 result from each partition
-				if (lookupResults.size() == partitionNb) {
+				if (lookupResults.size() == PARTITION_NB) {
 					lookupReqId++;
 					createLookupResult(event.getQuerystr());
 				}
@@ -867,12 +867,12 @@ public final class Search extends ComponentDefinition {
 		public void handle(OtherPartitionsPartner event) {
 			PeerAddress partner = event.getPartner();
 
-			int mapId = partner.getPeerAddress().getId() % partitionNb;
+			int mapId = partner.getPeerAddress().getId() % PARTITION_NB;
 			if (!otherPartners.containsKey(mapId)) {
 				otherPartners.put(mapId, new ArrayList<PeerAddress>());
 			}
 			int mapEntrySize = otherPartners.get(mapId).size();
-			if (mapEntrySize >= otherPatnersNb) {
+			if (mapEntrySize >= otherPartnersNb) {
 				otherPartners.get(mapId).remove(0);
 			}
 			otherPartners.get(mapId).add(partner);
@@ -977,7 +977,8 @@ public final class Search extends ComponentDefinition {
 					leaderElectionAcks++;
 					if (leaderElectionAcks > (tmanPartners.size() / 2 + 1)) {
 						// self is elected as leader
-						trace("Election succeed. I am the leader. Nb of failed attempts: " + nbFailedElections);
+						trace("Election succeed. I am the leader of partition " + self.getPeerAddress().getId()
+								% PARTITION_NB + ". Nb of failed attempts: " + nbFailedElections);
 						isLeader = true;
 						leader = self;
 						electionGroup = new ArrayList<PeerAddress>(tmanPartners); // copy
@@ -1009,8 +1010,7 @@ public final class Search extends ComponentDefinition {
 
 		@Override
 		public void handle(KillLeaderTimeout event) {
-
-			trigger(new Stop(), control);
+			// trigger(new Stop(), control);
 
 		}
 	};
@@ -1191,7 +1191,8 @@ public final class Search extends ComponentDefinition {
 	    return s.hasNext() ? s.next() : "";
 	}
 
-	// Used for collecting statistics
+
+	// USED for collecting statistics
 	public int nbGossipRound = 0; // tman round
 	public int nbFailedElections = 0;
 	public static Map<Integer, Integer> mapConsistency = new HashMap<Integer, Integer>();
@@ -1203,7 +1204,8 @@ public final class Search extends ComponentDefinition {
 			mapConsistency.put(entityId, 1);
 		} else {
 			mapConsistency.put(entityId, nb + 1);
-			int NB_NODES = 29;
+			// logger.info("Nb" + nb);
+			int NB_NODES = 1980;
 			if ((nb + 1) == NB_NODES) {
 				logger.info("All nodes updated with entity id " + entityId);
 			}

@@ -38,9 +38,9 @@ public final class TMan extends ComponentDefinition {
 	private List<PeerAddress> tmanPartners = new ArrayList<PeerAddress>();
 	private List<PeerAddress> cyclonPartners = new ArrayList<PeerAddress>();
 	private TManConfiguration tmanConfiguration;
-	private final int tmanPartnersSize = 5;
+	private final int TMAN_PARTNERS_SIZE = 80;
 	private UtilityComparator uComparator;
-	private final int partitionNb = 10;
+	private final int PARTITION_NB = 10;
 
 	public class TManSchedule extends Timeout {
 
@@ -123,9 +123,9 @@ public final class TMan extends ComponentDefinition {
 					// trace("partner: " + partner.getPeerAddress().getId());
 
 					// Same partition
-					if (partner.getPeerAddress().getId() % partitionNb == self.getPeerAddress().getId() % partitionNb) {
+					if (partner.getPeerAddress().getId() % PARTITION_NB == self.getPeerAddress().getId() % PARTITION_NB) {
 						if (!tmanPartners.contains(partner)) {
-							if (tmanPartners.size() < tmanPartnersSize) {
+							if (tmanPartners.size() < TMAN_PARTNERS_SIZE) {
 								tmanPartners.add(partner);
 							} else {
 								int last = tmanPartners.size() - 1;
@@ -180,7 +180,7 @@ public final class TMan extends ComponentDefinition {
 			}
 			// trace(sb.toString());
 
-			while (tmanPartners.size() > tmanPartnersSize) {
+			while (tmanPartners.size() > TMAN_PARTNERS_SIZE) {
 				tmanPartners.remove(0);
 			}
 			Collections.reverse(tmanPartners);
@@ -212,7 +212,7 @@ public final class TMan extends ComponentDefinition {
 			List<PeerAddress> viewSender = event.getView();
 			mergeTmanPartners(viewSender);
 			Collections.sort(tmanPartners, uComparator);
-			while (tmanPartners.size() > tmanPartnersSize) {
+			while (tmanPartners.size() > TMAN_PARTNERS_SIZE) {
 				tmanPartners.remove(0);
 			}
 			Collections.reverse(tmanPartners);
